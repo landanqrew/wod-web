@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: wod-web-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: wod
+      POSTGRES_PASSWORD: wod
+      POSTGRES_DB: wod
+    ports:
+      - "5433:5432"
+    volumes:
+      - wod-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wod -d wod"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  wod-pgdata:

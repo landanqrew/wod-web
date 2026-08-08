@@ -1,26 +1,128 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+  WOD Assistant — dark charcoal + volt lime.
+  "Warm shell, crisp core": a roomy pill-and-card shell wrapped around dense,
+  hairline-bordered data regions. Charcoal never reaches #000; depth comes from
+  1px borders plus soft black shadows, and volt is reserved for CTAs, active
+  state, progress and PRs. Palette is the canonical one from docs/design.
+*/
+@theme {
+  --color-app: #0b0d0b;
+  --color-canvas: #101310;
+  --color-card: #161a16;
+  --color-card-hi: #1c211c;
+  --color-ink: #eef1ea;
+  --color-muted: #1d221d;
+  --color-muted-fg: #9aa194;
+  --color-subtle: #626a5e;
+  --color-border: #242a23;
+  --color-border-hi: #303731;
+
+  --color-primary: #c8f042;
+  --color-primary-deep: #b2d936;
+  --color-primary-bright: #dcff5e;
+  --color-on-primary: #10130a;
+  --color-spark: #ff6a2b;
+
+  --color-ok: #4ade80;
+  --color-warn: #fbbf24;
+  --color-danger: #f87171;
+
+  --font-sans: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+  --radius-2xl: 16px;
+
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-lift: 0 8px 24px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.35);
+  --shadow-panel: -16px 0 48px rgba(0, 0, 0, 0.6);
+  --shadow-glow: 0 0 20px color-mix(in srgb, #c8f042 25%, transparent);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  html {
+    color-scheme: dark;
+  }
+  body {
+    background: var(--color-app);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--color-primary) 30%, transparent);
+  }
+  /* Quiet, volt-tinted scrollbars so dense tables don't shout. */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border-hi);
+    border-radius: 99px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--color-primary) 40%, var(--color-border-hi));
+    background-clip: content-box;
+  }
+  input,
+  textarea,
+  select,
+  button {
+    font: inherit;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer components {
+  /* Tiny uppercase key above a big mono numeral — the core data idiom. */
+  .stat-key {
+    @apply text-[11px] font-semibold uppercase tracking-[0.07em] text-subtle;
+  }
+  .stat-value {
+    @apply font-mono text-[30px] font-bold tracking-[-0.03em] text-ink;
+  }
+  .card-surface {
+    @apply rounded-2xl border border-border bg-card shadow-soft;
+  }
+  .table-head-cell {
+    @apply px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-[0.06em] text-subtle;
+  }
+  .data-row {
+    @apply border-b border-border transition-colors last:border-b-0 hover:bg-primary/6;
+  }
+  .field {
+    @apply w-full rounded-lg border border-border bg-app px-3 py-2 text-ink outline-none
+      transition placeholder:text-subtle focus:border-primary/40 focus:ring-2 focus:ring-primary/25;
+  }
+}
+
+/* Fires once when a PR is detected — the celebration moment. */
+@keyframes pr-pop {
+  0% {
+    transform: scale(0.9);
+    opacity: 0;
+  }
+  55% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+.animate-pr-pop {
+  animation: pr-pop 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
 }

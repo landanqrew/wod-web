@@ -1,0 +1,53 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { and, eq } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { athletes, impediments } from "@/lib/db/schema";
+import { getAthlete, getUser } from "@/lib/data/athlete";
+import { addImpedimentFor, createAthleteProfile } from "@/lib/training/profile";
+
+export async function completeOnboarding(raw: unknown) {
+  const user = await getUser();
+  if (!user) redirect("/sign-in");
+
+  const existing = await getAthlete();
+  if (existing) redirect("/");
+
+  await createAthleteProfile(user.id, raw);
+
+  revalidatePath("/", "layout");
+  redirect("/");
+}
+
+export async function addImpediment(raw: unknown) {
+  const athlete = await getAthlete();
+  if (!athlete) redirect("/onboarding");
+
+  await addImpedimentFor(athlete.id, raw);
+  revalidatePath("/", "layout");
+}
+
+export async function removeImpediment(impedimentId: string) {
+  const athlete = await getAthlete();
+  if (!athlete) redirect("/onboarding");
+
+  await db
+    .delete(impediments)
+    .where(and(eq(impediments.id, impedimentId), eq(impediments.athleteId, athlete.id)));
+
+  revalidatePath("/", "layout");
+}
+
+export async function updateEquipment(equipment: string[]) {
+  const athlete = await getAthlete();
+  if (!athlete) redirect("/onboarding");
+
+  await db
+    .update(athletes)
+    .set({ equipment, updatedAt: new Date() })
+    .where(eq(athletes.id, athlete.id));
+
+  revalidatePath("/", "layout");
+}
