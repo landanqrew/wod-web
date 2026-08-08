@@ -286,16 +286,16 @@ export function GenerateClient({
                           </button>
                         ))}
                       </div>
-                      {activeNotes.filter((n) => n.changes.length > 0).length > 0 ? (
+                      {changedNotes(activeNotes).length > 0 ? (
                         <ul className="rounded-lg border border-warn/30 bg-warn/8 px-3 py-2 text-[12px] text-warn">
-                          {activeNotes
-                            .filter((n) => n.changes.length > 0)
-                            .map((n) => (
-                              <li key={n.originalId}>
-                                {n.originalName} → {n.tieredMovementName} (
-                                {n.changes.map((c) => c.replace(/_/g, " ")).join(", ")})
-                              </li>
-                            ))}
+                          {changedNotes(activeNotes).map((n) => (
+                            <li key={n.originalId}>
+                              {n.originalName === n.tieredMovementName
+                                ? n.originalName
+                                : `${n.originalName} → ${n.tieredMovementName}`}{" "}
+                              ({n.changes.filter((c) => c !== "kept").join(", ")})
+                            </li>
+                          ))}
                         </ul>
                       ) : null}
                     </div>
@@ -344,6 +344,11 @@ export function GenerateClient({
       ) : null}
     </>
   );
+}
+
+/** "kept" alone means nothing changed at this tier — don't warn about it. */
+function changedNotes(notes: ScaledWorkout["scalingNotes"]) {
+  return notes.filter((n) => n.changes.some((c) => c !== "kept"));
 }
 
 function needsTimeCap(format: WorkoutFormat) {

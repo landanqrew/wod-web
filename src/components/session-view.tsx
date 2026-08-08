@@ -1,8 +1,7 @@
 import * as React from "react";
 import { Card } from "@/components/ui/card";
-import { titleCase } from "@/lib/format";
+import { prescriptionLine, titleCase } from "@/lib/format";
 import type { SessionBlock, TrainingSession } from "@/lib/domain/models/workout";
-import { getMovement } from "@/lib/domain/movements/library";
 import { cn } from "@/lib/utils";
 
 /** Block strip for a built session — warm-up → work → cool-down. */
@@ -53,12 +52,7 @@ export function SessionView({
               ) : null}
               {block.workout?.movements.length ? (
                 <span className="mt-1 block font-mono text-[12px] text-muted-fg">
-                  {block.workout.movements
-                    .map(
-                      (m) =>
-                        `${m.notes ?? m.reps ?? ""} ${getMovement(m.movementId)?.name ?? m.movementId}${m.load ? ` @ ${m.load} lb` : ""}`
-                    )
-                    .join(" · ")}
+                  {block.workout.movements.map(prescriptionLine).join(" · ")}
                 </span>
               ) : null}
               {block.notes ? (
