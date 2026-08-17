@@ -27,6 +27,7 @@ import {
   updateSessionProgrammedWorkoutAction,
 } from "@/lib/actions/programmed-workout";
 import { MembershipRole, type Gym, type GymMember } from "@/lib/domain/models/gym";
+import type { AssignedWorkout } from "@/lib/domain/models/assigned-workout";
 import type { ClassSessionSummary, GymClass } from "@/lib/domain/models/gym-class";
 import {
   ScoreType,
@@ -72,12 +73,14 @@ export function ClassesClient({
   gyms,
   upcomingSessions,
   programmedWorkoutsBySession,
+  assignedWorkoutsBySession,
   classesByGym,
   coachesByGym,
 }: {
   gyms: Gym[];
   upcomingSessions: ClassSessionSummary[];
   programmedWorkoutsBySession: Record<string, Workout | undefined>;
+  assignedWorkoutsBySession: Record<string, AssignedWorkout | null>;
   classesByGym: Record<string, GymClass[]>;
   coachesByGym: Record<string, GymMember[]>;
 }) {
@@ -149,6 +152,15 @@ export function ClassesClient({
   }
 
   function toggleReservation(session: ClassSessionSummary) {
+    if (
+      session.reserved &&
+      assignedWorkoutsBySession[session.id] &&
+      !window.confirm(
+        "Cancelling removes your Assigned Workout and any personal edits. Continue?",
+      )
+    ) {
+      return;
+    }
     startTransition(async () => {
       try {
         if (session.reserved) await cancelReservationAction(session.id);
@@ -652,6 +664,29 @@ export function ClassesClient({
                       .map(prescriptionLine)
                       .join(" · ")}
                   </p>
+                </div>
+              ) : null}
+              {assignedWorkoutsBySession[session.id] ? (
+                <div className="rounded-xl border border-primary/30 bg-primary/5 p-3">
+                  <p className="text-sm font-semibold">Your Assigned Workout</p>
+                  <p className="mt-1 text-xs text-subtle">
+                    {assignedWorkoutsBySession[session.id]?.workout.movements
+                      .map(prescriptionLine)
+                      .join(" · ")}
+                  </p>
+                  {(assignedWorkoutsBySession[session.id]?.changes.length ?? 0) > 0 ? (
+                    <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-subtle">
+                      {assignedWorkoutsBySession[session.id]?.changes.map((change) => (
+                        <li key={`${change.movementIndex}-${change.personalisedMovementId}`}>
+                          {change.explanations.join(" · ")}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 text-xs text-subtle">
+                      Matches the programmed version after Rx resolution.
+                    </p>
+                  )}
                 </div>
               ) : null}
               <p className="text-xs text-subtle">

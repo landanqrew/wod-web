@@ -15,6 +15,7 @@ export async function reserveClassSessionAction(classSessionId: string) {
 
 export async function cancelReservationAction(classSessionId: string) {
   const athlete = await requireAthlete();
-  await cancelReservationForAthlete(classSessionId, athlete.id);
+  const result = await cancelReservationForAthlete(classSessionId, athlete.id);
   revalidatePath("/classes");
+  return result;
 }
