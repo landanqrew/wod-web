@@ -123,3 +123,62 @@ describe("three body-axis migration", () => {
     }
   });
 });
+
+describe("Gym Membership migration", () => {
+  it("backfills legacy owners before removing direct Gym ownership", async () => {
+    await client.query("BEGIN");
+
+    try {
+      await client.query(`
+        CREATE SCHEMA issue_13_migration;
+        SET LOCAL search_path TO issue_13_migration;
+        CREATE TABLE athletes (id text PRIMARY KEY);
+        CREATE TABLE gyms (
+          id text PRIMARY KEY,
+          name text NOT NULL,
+          owner_athlete_id text,
+          created_at timestamp NOT NULL DEFAULT now(),
+          updated_at timestamp NOT NULL DEFAULT now(),
+          CONSTRAINT gyms_owner_athlete_id_athletes_id_fk
+            FOREIGN KEY (owner_athlete_id) REFERENCES athletes(id) ON DELETE SET NULL
+        );
+        CREATE INDEX gyms_owner_athlete_idx ON gyms(owner_athlete_id);
+        INSERT INTO athletes (id) VALUES ('legacy-owner');
+        INSERT INTO gyms (id, name, owner_athlete_id)
+        VALUES ('legacy-gym', 'Legacy Gym', 'legacy-owner');
+      `);
+
+      const migration = (
+        await readFile(
+          new URL("../../../drizzle/0004_icy_valkyrie.sql", import.meta.url),
+          "utf8",
+        )
+      ).replaceAll('"public".', '"issue_13_migration".');
+      for (const statement of migration.split("--> statement-breakpoint")) {
+        if (statement.trim()) await client.query(statement);
+      }
+
+      const membership = await client.query(
+        `SELECT gym_id, athlete_id, role FROM memberships`,
+      );
+      expect(membership.rows).toEqual([
+        {
+          gym_id: "legacy-gym",
+          athlete_id: "legacy-owner",
+          role: "owner",
+        },
+      ]);
+
+      const legacyColumn = await client.query(
+        `SELECT column_name
+         FROM information_schema.columns
+         WHERE table_schema = 'issue_13_migration'
+           AND table_name = 'gyms'
+           AND column_name = 'owner_athlete_id'`,
+      );
+      expect(legacyColumn.rows).toEqual([]);
+    } finally {
+      await client.query("ROLLBACK");
+    }
+  });
+});

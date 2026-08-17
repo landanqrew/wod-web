@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { readFile } from "node:fs/promises";
 import { getTableConfig } from "drizzle-orm/pg-core";
 import { gyms, memberships, workouts } from "./schema";
 
@@ -30,19 +29,5 @@ describe("Gym Memberships", () => {
       "cascade",
     ]);
     expect("ownerAthleteId" in gyms).toBe(false);
-  });
-
-  it("backfills existing Gym owners before removing legacy ownership", async () => {
-    const migration = await readFile(
-      new URL("../../../drizzle/0004_icy_valkyrie.sql", import.meta.url),
-      "utf8",
-    );
-    const backfill = migration.indexOf('INSERT INTO "memberships"');
-    const dropOwner = migration.indexOf(
-      'ALTER TABLE "gyms" DROP COLUMN "owner_athlete_id"',
-    );
-
-    expect(backfill).toBeGreaterThan(-1);
-    expect(dropOwner).toBeGreaterThan(backfill);
   });
 });

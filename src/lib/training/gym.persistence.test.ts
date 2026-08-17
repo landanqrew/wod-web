@@ -116,6 +116,15 @@ describe("Gym floor persistence", () => {
         floor: [{ equipment: Equipment.Barbell, stationCount: 1 }],
       }),
     ).rejects.toThrow("Gym not found");
+    await expect(
+      grantGymMembership(gymId, outsiderAthleteId, {
+        email: `${userId}@test.local`,
+        role: MembershipRole.Member,
+      }),
+    ).rejects.toThrow("Gym not found");
+    await expect(
+      revokeGymMembership(gymId, outsiderAthleteId, athleteId),
+    ).rejects.toThrow("Gym not found");
 
     await grantGymMembership(gymId, athleteId, {
       email: `${outsiderUserId}@test.local`,
