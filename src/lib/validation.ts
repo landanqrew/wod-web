@@ -97,6 +97,27 @@ export const onboardingSchema = z.object({
   impediments: z.array(impedimentInputSchema).max(6).default([]),
 });
 
+export const gymFloorEntrySchema = z.object({
+  equipment: enumOf(Equipment).refine(
+    (equipment) => equipment !== Equipment.None,
+    "Bodyweight is not floor equipment",
+  ),
+  stationCount: z.number().int().positive().max(10_000).optional(),
+});
+
+export const gymInputSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  floor: z
+    .array(gymFloorEntrySchema)
+    .max(Object.values(Equipment).length)
+    .refine(
+      (entries) =>
+        new Set(entries.map(({ equipment }) => equipment)).size ===
+        entries.length,
+      "Each equipment type can appear only once",
+    ),
+});
+
 export const sessionBlockSchema = z.object({
   type: enumOf(SessionBlockType),
   durationMinutes: z.number().int().positive().max(180),
@@ -115,3 +136,4 @@ export type LogResultInput = z.infer<typeof logResultSchema>;
 export type OnboardingInput = z.infer<typeof onboardingSchema>;
 export type GenerateOptionsInput = z.infer<typeof generateOptionsSchema>;
 export type SaveSessionInput = z.infer<typeof saveSessionSchema>;
+export type GymInput = z.infer<typeof gymInputSchema>;

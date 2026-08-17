@@ -5,6 +5,7 @@ import {
   jsonb,
   numeric,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -137,6 +138,32 @@ export const workouts = pgTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [index("workouts_created_by_idx").on(t.createdBy)]
+);
+
+export const gyms = pgTable(
+  "gyms",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    ownerAthleteId: text("owner_athlete_id").references(() => athletes.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [index("gyms_owner_athlete_idx").on(t.ownerAthleteId)],
+);
+
+export const gymEquipment = pgTable(
+  "gym_equipment",
+  {
+    gymId: text("gym_id")
+      .notNull()
+      .references(() => gyms.id, { onDelete: "cascade" }),
+    equipment: text("equipment").notNull(),
+    stationCount: integer("station_count"),
+  },
+  (t) => [primaryKey({ columns: [t.gymId, t.equipment] })],
 );
 
 export const workoutResults = pgTable(

@@ -1,6 +1,7 @@
 import {
   BarChart3,
   CalendarDays,
+  Building2,
   Clock,
   Dumbbell,
   Flame,
@@ -20,6 +21,7 @@ const MAP = {
   chart: BarChart3,
   info: Info,
   calendar: CalendarDays,
+  building: Building2,
 } as const;
 
 export function NavGlyph({ icon, size = 18 }: { icon: NavIcon; size?: number }) {

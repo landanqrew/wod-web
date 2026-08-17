@@ -7,6 +7,7 @@ export const NAV_ITEMS = [
   { href: "/progress", label: "Progress", icon: "chart" },
   { href: "/insights", label: "Insights", icon: "info" },
   { href: "/programs", label: "Programs", icon: "calendar" },
+  { href: "/gyms", label: "Gyms", icon: "building" },
 ] as const;
 
 export type NavIcon = (typeof NAV_ITEMS)[number]["icon"];
