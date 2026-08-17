@@ -13,6 +13,7 @@ import {
 import type { MovementPrescription, SessionBlock } from "@/lib/domain/models/workout";
 import type { MovementResult } from "@/lib/domain/models/workout-result";
 import type { MovementConstraint } from "@/lib/domain/models/impediment";
+import type { WeeklyClassTime } from "@/lib/domain/scheduling/expand-class-schedule";
 
 /* ── auth (better-auth) ─────────────────────────────────────────────── */
 
@@ -176,6 +177,44 @@ export const gymEquipment = pgTable(
     stationCount: integer("station_count"),
   },
   (t) => [primaryKey({ columns: [t.gymId, t.equipment] })],
+);
+
+export const gymClasses = pgTable(
+  "classes",
+  {
+    id: text("id").primaryKey(),
+    gymId: text("gym_id")
+      .notNull()
+      .references(() => gyms.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    coachAthleteId: text("coach_athlete_id").references(() => athletes.id, {
+      onDelete: "set null",
+    }),
+    weeklyTimes: jsonb("weekly_times").$type<WeeklyClassTime[]>().notNull(),
+    timeZone: text("time_zone").notNull(),
+    capacity: integer("capacity").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [index("classes_gym_idx").on(t.gymId)],
+);
+
+export const classSessions = pgTable(
+  "class_sessions",
+  {
+    id: text("id").primaryKey(),
+    classId: text("class_id")
+      .notNull()
+      .references(() => gymClasses.id, { onDelete: "cascade" }),
+    localDate: text("local_date").notNull(),
+    startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("class_sessions_class_starts_idx").on(t.classId, t.startsAt),
+    index("class_sessions_starts_idx").on(t.startsAt),
+  ],
 );
 
 export const workoutResults = pgTable(
