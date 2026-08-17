@@ -39,6 +39,8 @@ const FORMAT_DEFAULTS: Record<
     timeCap?: number;
     rounds?: number;
     emomMinutes?: number;
+    workInterval?: number;
+    restInterval?: number;
   }
 > = {
   [WorkoutFormat.AMRAP]: { movementCount: 3, timeCap: 12 },
@@ -49,8 +51,18 @@ const FORMAT_DEFAULTS: Record<
     rounds: 5,
     timeCap: 20,
   },
-  [WorkoutFormat.Tabata]: { movementCount: 4 },
-  [WorkoutFormat.Interval]: { movementCount: 2 },
+  [WorkoutFormat.Tabata]: {
+    movementCount: 4,
+    rounds: 8,
+    workInterval: 20,
+    restInterval: 10,
+  },
+  [WorkoutFormat.Interval]: {
+    movementCount: 2,
+    rounds: 5,
+    workInterval: 60,
+    restInterval: 60,
+  },
   [WorkoutFormat.Strength]: { movementCount: 1 },
   [WorkoutFormat.Chipper]: { movementCount: 6, timeCap: 25 },
   [WorkoutFormat.Ladder]: { movementCount: 2, timeCap: 15 },
@@ -120,6 +132,8 @@ export function programWorkout(
     timeCap: options.timeCap ?? defaults.timeCap,
     rounds: options.rounds ?? defaults.rounds,
     emomMinutes: options.emomMinutes ?? defaults.emomMinutes,
+    workInterval: defaults.workInterval,
+    restInterval: defaults.restInterval,
     scoreType: getScoreType(options.format),
     isBenchmark: false,
     estimatedDuration: estimateDuration(options),

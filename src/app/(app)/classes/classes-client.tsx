@@ -34,6 +34,10 @@ import {
   type MovementPrescription,
   type Workout,
 } from "@/lib/domain/models/workout";
+import {
+  changeProgrammedWorkoutFormat,
+  createManualProgrammedWorkout,
+} from "@/lib/domain/programming/manual-workout";
 import type { WeeklyClassTime } from "@/lib/domain/scheduling/expand-class-schedule";
 import { formatLabel, prescriptionLine } from "@/lib/format";
 
@@ -57,17 +61,12 @@ type ProgrammingDraft = {
   movementsJson: string;
 };
 
-function newManualWorkout(): Workout {
-  return {
-    id: `programmed_${Date.now()}`,
-    name: "",
-    format: WorkoutFormat.AMRAP,
-    movements: [{ movementId: "air_squat", reps: 15 }],
-    timeCap: 12,
-    scoreType: ScoreType.RoundsAndReps,
-    isBenchmark: false,
-  };
-}
+type ProgrammingNumberField =
+  | "timeCap"
+  | "rounds"
+  | "workInterval"
+  | "restInterval"
+  | "emomMinutes";
 
 export function ClassesClient({
   gyms,
@@ -164,7 +163,7 @@ export function ClassesClient({
 
   function beginManualProgramming(localDate: string) {
     if (!selectedGym) return;
-    const workout = newManualWorkout();
+    const workout = createManualProgrammedWorkout();
     setProgrammingDraft({
       gymId: selectedGym.id,
       localDate,
@@ -221,6 +220,17 @@ export function ClassesClient({
       } catch {
         toast.error("Could not save that Programmed Workout. Check the prescription.");
       }
+    });
+  }
+
+  function updateProgrammingNumber(
+    field: ProgrammingNumberField,
+    value: number,
+  ) {
+    if (!programmingDraft) return;
+    setProgrammingDraft({
+      ...programmingDraft,
+      workout: { ...programmingDraft.workout, [field]: value },
     });
   }
 
@@ -458,10 +468,10 @@ export function ClassesClient({
                 onChange={(event) =>
                   setProgrammingDraft({
                     ...programmingDraft,
-                    workout: {
-                      ...programmingDraft.workout,
-                      format: event.target.value as WorkoutFormat,
-                    },
+                    workout: changeProgrammedWorkoutFormat(
+                      programmingDraft.workout,
+                      event.target.value as WorkoutFormat,
+                    ),
                   })
                 }
               >
@@ -488,6 +498,77 @@ export function ClassesClient({
                 ))}
               </Select>
             </FieldRow>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            {programmingDraft.workout.timeCap !== undefined ? (
+              <FieldRow label="Time cap (minutes)">
+                <Input
+                  type="number"
+                  min={1}
+                  value={programmingDraft.workout.timeCap}
+                  onChange={(event) =>
+                    updateProgrammingNumber("timeCap", Number(event.target.value))
+                  }
+                />
+              </FieldRow>
+            ) : null}
+            {programmingDraft.workout.rounds !== undefined ? (
+              <FieldRow label="Rounds / sets">
+                <Input
+                  type="number"
+                  min={1}
+                  value={programmingDraft.workout.rounds}
+                  onChange={(event) =>
+                    updateProgrammingNumber("rounds", Number(event.target.value))
+                  }
+                />
+              </FieldRow>
+            ) : null}
+            {programmingDraft.workout.emomMinutes !== undefined ? (
+              <FieldRow label="EMOM minutes">
+                <Input
+                  type="number"
+                  min={1}
+                  value={programmingDraft.workout.emomMinutes}
+                  onChange={(event) =>
+                    updateProgrammingNumber(
+                      "emomMinutes",
+                      Number(event.target.value),
+                    )
+                  }
+                />
+              </FieldRow>
+            ) : null}
+            {programmingDraft.workout.workInterval !== undefined ? (
+              <FieldRow label="Work seconds">
+                <Input
+                  type="number"
+                  min={1}
+                  value={programmingDraft.workout.workInterval}
+                  onChange={(event) =>
+                    updateProgrammingNumber(
+                      "workInterval",
+                      Number(event.target.value),
+                    )
+                  }
+                />
+              </FieldRow>
+            ) : null}
+            {programmingDraft.workout.restInterval !== undefined ? (
+              <FieldRow label="Rest seconds">
+                <Input
+                  type="number"
+                  min={0}
+                  value={programmingDraft.workout.restInterval}
+                  onChange={(event) =>
+                    updateProgrammingNumber(
+                      "restInterval",
+                      Number(event.target.value),
+                    )
+                  }
+                />
+              </FieldRow>
+            ) : null}
           </div>
           <FieldRow
             label="Movement prescriptions (JSON)"
