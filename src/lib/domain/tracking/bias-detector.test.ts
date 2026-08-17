@@ -91,7 +91,7 @@ describe("BiasDetector", () => {
     expect(modalityInsights.length).toBeGreaterThanOrEqual(2);
   });
 
-  it("detects missing muscle groups", () => {
+  it("detects missing Movement Patterns", () => {
     // All squat/push, no pull or hinge
     for (let i = 0; i < 5; i++) {
       results.push(
@@ -107,10 +107,27 @@ describe("BiasDetector", () => {
     }
 
     const report = detector.analyze(30);
-    const mgInsights = report.insights.filter(
-      (i) => i.category === "muscle_group"
+    const patternInsights = report.insights.filter(
+      (i) => i.category === "movement_pattern"
     );
-    expect(mgInsights.length).toBeGreaterThanOrEqual(1);
+    expect(patternInsights.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("reports Muscle distribution separately from Movement Pattern balance", () => {
+    results.push(
+      makeResult({
+        performedAt: new Date().toISOString(),
+        movementResults: [
+          { movementId: "back_squat", load: 225, reps: 10, rx: true },
+        ],
+      })
+    );
+
+    const report = detector.analyze(30);
+
+    expect(report.muscleDistribution.quads).toBeGreaterThan(0);
+    expect(report.muscleDistribution.glutes).toBeGreaterThan(0);
+    expect(report.movementPatternDistribution.squat).toBe(100);
   });
 
   it("computes modality distribution percentages", () => {

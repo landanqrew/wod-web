@@ -28,7 +28,7 @@ export interface SubstitutionResult {
  * 2. For each candidate, check if it passes constraints + equipment
  * 3. Return the first valid substitute
  * 4. If none found in the chain, search the full library for a movement
- *    in the same muscle group(s) that is allowed
+ *    that trains at least one of the same Muscles and is allowed
  */
 export function findSubstitution(
   movement: Movement,
@@ -69,7 +69,7 @@ export function findSubstitution(
     }
   }
 
-  // No direct substitute found -- broader library search by muscle group
+  // No direct substitute found -- broader library search by shared Muscle
   const broadMatch = findBroadSubstitution(movement, constraints, equipment);
   if (broadMatch) {
     const broadCheck = checkMovement(broadMatch, constraints, equipment);
@@ -79,7 +79,7 @@ export function findSubstitution(
       originalReasons: originalCheck.reasons,
       replacementWarnings: [
         ...broadCheck.warnings,
-        "Substituted via muscle-group fallback (not a direct substitution)",
+        "Substituted via shared-Muscle fallback (not a direct substitution)",
       ],
       loadScale: broadCheck.maxLoadPercent
         ? broadCheck.maxLoadPercent / 100
@@ -98,10 +98,10 @@ export function findSubstitution(
 
 /**
  * Search the full movement library for a substitute that shares at least one
- * muscle group with the original movement and passes all constraints.
+ * Muscle with the original movement and passes all constraints.
  *
  * Prefers movements that:
- * 1. Share the most muscle groups with the original
+ * 1. Share the most Muscles with the original
  * 2. Are at or below the original's difficulty tier
  * 3. Share the same modality (tie-breaker)
  */
@@ -110,7 +110,10 @@ function findBroadSubstitution(
   constraints: MovementConstraint | null,
   equipment: EquipmentInventory
 ): Movement | null {
-  const originalGroups = new Set(original.muscleGroups);
+  const originalMuscles = new Set([
+    ...original.primaryMuscles,
+    ...original.secondaryMuscles,
+  ]);
   const alreadyTried = new Set([
     original.id,
     ...original.substitutions,
@@ -124,11 +127,13 @@ function findBroadSubstitution(
   for (const candidate of getAllMovements()) {
     if (alreadyTried.has(candidate.id)) continue;
 
-    // Must share at least one muscle group
-    const sharedGroups = candidate.muscleGroups.filter((g) =>
-      originalGroups.has(g)
+    const sharedMuscles = [
+      ...candidate.primaryMuscles,
+      ...candidate.secondaryMuscles,
+    ].filter((muscle) =>
+      originalMuscles.has(muscle)
     ).length;
-    if (sharedGroups === 0) continue;
+    if (sharedMuscles === 0) continue;
 
     // Must pass constraints + equipment
     const check = checkMovement(candidate, constraints, equipment);
@@ -139,7 +144,7 @@ function findBroadSubstitution(
     const atOrBelowDifficulty = candidateDiffIdx <= originalDiffIdx ? 1 : 0;
     const sameModality = candidate.modality === original.modality ? 1 : 0;
 
-    const score = sharedGroups * 10 + atOrBelowDifficulty * 5 + sameModality;
+    const score = sharedMuscles * 10 + atOrBelowDifficulty * 5 + sameModality;
     candidates.push({ movement: candidate, score });
   }
 

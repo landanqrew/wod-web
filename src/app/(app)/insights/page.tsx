@@ -54,9 +54,20 @@ export default async function InsightsPage() {
           </Card>
 
           <Card className="p-5">
-            <CardHeader title="Muscle groups" className="px-0 pt-0" />
+            <CardHeader title="Muscles trained" className="px-0 pt-0" />
             <DistributionBars
-              rows={Object.entries(biasReport.muscleGroupDistribution).map(([k, v]) => ({
+              rows={Object.entries(biasReport.muscleDistribution).map(([k, v]) => ({
+                label: titleCase(k),
+                value: v,
+              }))}
+              tone="var(--color-spark)"
+            />
+          </Card>
+
+          <Card className="p-5">
+            <CardHeader title="Movement Pattern mix" className="px-0 pt-0" />
+            <DistributionBars
+              rows={Object.entries(biasReport.movementPatternDistribution).map(([k, v]) => ({
                 label: titleCase(k),
                 value: v,
               }))}

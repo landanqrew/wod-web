@@ -88,9 +88,8 @@ export const athletes = pgTable(
 );
 
 /**
- * Impediments the CLI modelled but never persisted. Constraints are recomputed
- * at read time by the constraint engine, but the resolved snapshot is stored so
- * hand-tuned constraints survive a round trip.
+ * Constraints are recomputed from the canonical fields at read time. The stored
+ * snapshot is retained for migration compatibility and inspection.
  */
 export const impediments = pgTable(
   "impediments",
@@ -101,7 +100,8 @@ export const impediments = pgTable(
       .references(() => athletes.id, { onDelete: "cascade" }),
     category: text("category").notNull(),
     severity: text("severity").notNull(),
-    affectedRegions: jsonb("affected_regions").$type<string[]>().notNull().default([]),
+    affectedMuscles: jsonb("affected_muscles").$type<string[]>().notNull().default([]),
+    affectedJoints: jsonb("affected_joints").$type<string[]>().notNull().default([]),
     description: text("description").notNull().default(""),
     startDate: text("start_date").notNull(),
     endDate: text("end_date"),

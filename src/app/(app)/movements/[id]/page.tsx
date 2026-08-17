@@ -101,15 +101,27 @@ export default async function MovementDetailPage({
               mono
             />
             <div className="flex flex-col gap-1.5 border-t border-border pt-3">
-              <span className="stat-key">Primary regions</span>
+              <span className="stat-key">Primary Muscles</span>
               <span className="flex flex-wrap gap-1.5">
-                {movement.primaryRegions.map((r) => (
+                {movement.primaryMuscles.map((r) => (
                   <Pill key={r} tone="neutral">
                     {titleCase(r)}
                   </Pill>
                 ))}
               </span>
             </div>
+            <Row
+              label="Secondary Muscles"
+              value={movement.secondaryMuscles.map(titleCase).join(", ") || EM_DASH}
+            />
+            <Row
+              label="Loaded Joints"
+              value={movement.loadedJoints.map(titleCase).join(", ")}
+            />
+            <Row
+              label="Movement Patterns"
+              value={movement.movementPatterns.map(titleCase).join(", ")}
+            />
             {movement.tags.length > 0 ? (
               <div className="flex flex-col gap-1.5">
                 <span className="stat-key">Tags</span>

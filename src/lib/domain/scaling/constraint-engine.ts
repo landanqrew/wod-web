@@ -1,4 +1,4 @@
-import type { Movement, MovementTag } from "../models/movement";
+import type { Movement } from "../models/movement";
 import type { MovementConstraint, Impediment } from "../models/impediment";
 import type { EquipmentInventory } from "../models/equipment";
 import { Equipment } from "../models/equipment";
@@ -29,7 +29,12 @@ export function mergeConstraints(
   const allConstraints = impediments.map((i) => i.constraints);
 
   const merged: MovementConstraint = {
-    avoidRegions: [...new Set(allConstraints.flatMap((c) => c.avoidRegions))],
+    avoidMuscles: [
+      ...new Set(allConstraints.flatMap((constraint) => constraint.avoidMuscles)),
+    ],
+    avoidJoints: [
+      ...new Set(allConstraints.flatMap((constraint) => constraint.avoidJoints)),
+    ],
     avoidTags: [...new Set(allConstraints.flatMap((c) => c.avoidTags))],
     // For booleans: if ANY constraint disallows, it's disallowed
     allowHighImpact: allConstraints.every((c) => c.allowHighImpact),
@@ -81,33 +86,38 @@ export function checkMovement(
     };
   }
 
-  // ── Body region check ────────────────────────────────────────────
-  const stressedRegions = [
-    ...movement.primaryRegions,
-    ...movement.secondaryRegions,
+  // ── Muscle check ─────────────────────────────────────────────────
+  const trainedMuscles = [
+    ...movement.primaryMuscles,
+    ...movement.secondaryMuscles,
   ];
-  const hitRegions = stressedRegions.filter((r) =>
-    constraints.avoidRegions.includes(r)
+  const hitMuscles = trainedMuscles.filter((muscle) =>
+    constraints.avoidMuscles.includes(muscle)
   );
-  if (hitRegions.length > 0) {
-    // Primary region hit = hard block. Secondary = warning.
-    const primaryHits = movement.primaryRegions.filter((r) =>
-      constraints.avoidRegions.includes(r)
+  if (hitMuscles.length > 0) {
+    const primaryHits = movement.primaryMuscles.filter((muscle) =>
+      constraints.avoidMuscles.includes(muscle)
     );
-    const secondaryHits = movement.secondaryRegions.filter((r) =>
-      constraints.avoidRegions.includes(r)
+    const secondaryHits = movement.secondaryMuscles.filter((muscle) =>
+      constraints.avoidMuscles.includes(muscle)
     );
 
     if (primaryHits.length > 0) {
-      reasons.push(
-        `Stresses protected region(s): ${primaryHits.join(", ")}`
-      );
+      reasons.push(`Trains protected Muscle(s): ${primaryHits.join(", ")}`);
     }
     if (secondaryHits.length > 0) {
       warnings.push(
-        `Secondarily stresses protected region(s): ${secondaryHits.join(", ")} -- use with caution`
+        `Secondarily trains protected Muscle(s): ${secondaryHits.join(", ")} -- use with caution`
       );
     }
+  }
+
+  // ── Joint check ──────────────────────────────────────────────────
+  const loadedJointHits = movement.loadedJoints.filter((joint) =>
+    constraints.avoidJoints.includes(joint)
+  );
+  if (loadedJointHits.length > 0) {
+    reasons.push(`Loads protected joint(s): ${loadedJointHits.join(", ")}`);
   }
 
   // ── Tag-based checks ─────────────────────────────────────────────

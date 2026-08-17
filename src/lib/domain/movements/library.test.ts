@@ -4,10 +4,10 @@ import {
   getMovement,
   getMovementOrThrow,
   getMovementsByModality,
-  getMovementsByMuscleGroup,
+  getMovementsByMovementPattern,
   getMovementsByEquipment,
 } from "./library";
-import { Modality, MuscleGroup } from "../models/body";
+import { Joint, Modality, MovementPattern, Muscle } from "../models/body";
 import { Equipment } from "../models/equipment";
 
 describe("movement library", () => {
@@ -23,15 +23,92 @@ describe("movement library", () => {
     expect(uniqueIds.size).toBe(ids.length);
   });
 
-  it("every movement has at least one primary region", () => {
+  it("every movement has at least one primary Muscle", () => {
     for (const m of getAllMovements()) {
-      expect(m.primaryRegions.length).toBeGreaterThan(0);
+      expect(m.primaryMuscles.length).toBeGreaterThan(0);
     }
   });
 
-  it("every movement has at least one muscle group", () => {
+  it("every movement declares the joints it loads", () => {
+    for (const movement of getAllMovements()) {
+      expect(movement.loadedJoints, movement.name).toBeDefined();
+      expect(movement.loadedJoints?.length, movement.name).toBeGreaterThan(0);
+    }
+  });
+
+  it("classifies prime movers and isometric loads consistently across families", () => {
+    const overheadSquat = getMovementOrThrow("overhead_squat");
+    expect(overheadSquat.primaryMuscles).toEqual([
+      Muscle.Quads,
+      Muscle.Glutes,
+    ]);
+    expect(overheadSquat.secondaryMuscles).toEqual(
+      expect.arrayContaining([
+        Muscle.Hamstrings,
+        Muscle.Core,
+        Muscle.LowerBack,
+        Muscle.Adductors,
+        Muscle.Shoulders,
+        Muscle.UpperBack,
+      ])
+    );
+
+    for (const movementId of [
+      "back_squat",
+      "front_squat",
+      "overhead_squat",
+      "goblet_squat",
+      "dumbbell_squat",
+      "air_squat",
+    ]) {
+      const movement = getMovementOrThrow(movementId);
+      expect(movement.primaryMuscles, movementId).toEqual(
+        expect.arrayContaining([Muscle.Quads, Muscle.Glutes])
+      );
+      expect(movement.secondaryMuscles, movementId).toEqual(
+        expect.arrayContaining([
+          Muscle.Hamstrings,
+          Muscle.Core,
+          Muscle.LowerBack,
+          Muscle.Adductors,
+        ])
+      );
+    }
+
+    for (const movementId of [
+      "snatch",
+      "power_snatch",
+      "hang_snatch",
+      "dumbbell_snatch",
+      "kettlebell_snatch",
+    ]) {
+      const movement = getMovementOrThrow(movementId);
+      expect(movement.primaryMuscles, movementId).not.toContain(
+        Muscle.Shoulders
+      );
+      expect(movement.secondaryMuscles, movementId).toContain(Muscle.Shoulders);
+    }
+
+    expect(
+      getMovementOrThrow("sumo_deadlift_high_pull").primaryMuscles
+    ).toContain(Muscle.Adductors);
+
+    const deadlift = getMovementOrThrow("deadlift");
+    expect(deadlift.primaryMuscles).not.toContain(Muscle.LowerBack);
+    expect(deadlift.secondaryMuscles).toContain(Muscle.LowerBack);
+    expect(deadlift.loadedJoints).toContain(Joint.Elbows);
+
+    expect(getMovementOrThrow("plank").loadedJoints).toEqual(
+      expect.arrayContaining([Joint.Shoulders, Joint.Spine])
+    );
+    expect(getMovementOrThrow("farmers_carry").loadedJoints).toContain(
+      Joint.Elbows
+    );
+  });
+
+  it("every movement has at least one Movement Pattern", () => {
     for (const m of getAllMovements()) {
-      expect(m.muscleGroups.length).toBeGreaterThan(0);
+      expect(m.movementPatterns.length).toBeGreaterThan(0);
     }
   });
 
@@ -62,11 +139,11 @@ describe("movement library", () => {
     }
   });
 
-  it("filters by muscle group", () => {
-    const pushMovements = getMovementsByMuscleGroup(MuscleGroup.Push);
+  it("filters by Movement Pattern", () => {
+    const pushMovements = getMovementsByMovementPattern(MovementPattern.Push);
     expect(pushMovements.length).toBeGreaterThan(0);
     for (const m of pushMovements) {
-      expect(m.muscleGroups).toContain(MuscleGroup.Push);
+      expect(m.movementPatterns).toContain(MovementPattern.Push);
     }
   });
 

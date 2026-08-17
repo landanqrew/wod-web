@@ -1,4 +1,4 @@
-import { BodyRegion } from "./body";
+import { Joint, Muscle } from "./body";
 
 /**
  * Categories of physical impediments that affect movement selection.
@@ -44,8 +44,10 @@ export enum ImpedimentSeverity {
  * These are the building blocks the substitution engine uses.
  */
 export interface MovementConstraint {
-  /** Body regions that should be protected */
-  avoidRegions: BodyRegion[];
+  /** Muscles that should be protected */
+  avoidMuscles: Muscle[];
+  /** Joints that should be protected */
+  avoidJoints: Joint[];
   /** Specific movement patterns to avoid (by movement tag) */
   avoidTags: string[];
   /** Maximum percentage of 1RM allowed (undefined = no load restriction) */
@@ -66,6 +68,11 @@ export interface MovementConstraint {
   notes?: string;
 }
 
+export interface AffectedBodyParts {
+  muscles: Muscle[];
+  joints: Joint[];
+}
+
 /**
  * An active impediment on an athlete's profile.
  */
@@ -73,8 +80,10 @@ export interface Impediment {
   id: string;
   category: ImpedimentCategory;
   severity: ImpedimentSeverity;
-  /** Affected body regions */
-  affectedRegions: BodyRegion[];
+  /** Affected Muscles */
+  affectedMuscles: Muscle[];
+  /** Affected Joints */
+  affectedJoints: Joint[];
   /** Human-readable description (e.g., "Left knee ACL rehab - 8 weeks post-op") */
   description: string;
   /** When this impediment started */
@@ -96,7 +105,8 @@ export function buildPregnancyConstraints(
   trimester: 1 | 2 | 3
 ): MovementConstraint {
   const base: MovementConstraint = {
-    avoidRegions: [],
+    avoidMuscles: [],
+    avoidJoints: [],
     avoidTags: [],
     allowHighImpact: true,
     allowOverhead: true,
@@ -121,7 +131,7 @@ export function buildPregnancyConstraints(
   if (trimester === 2) {
     return {
       ...base,
-      avoidRegions: [BodyRegion.Core],
+      avoidMuscles: [Muscle.Core],
       avoidTags: ["max_effort", "high_skill"],
       allowHighImpact: false,
       allowProne: false,
@@ -136,7 +146,7 @@ export function buildPregnancyConstraints(
   // Trimester 3
   return {
     ...base,
-    avoidRegions: [BodyRegion.Core, BodyRegion.LowerBack],
+    avoidMuscles: [Muscle.Core, Muscle.LowerBack],
     avoidTags: ["max_effort", "high_skill", "complex"],
     allowHighImpact: false,
     allowOverhead: false,
@@ -154,7 +164,8 @@ export function buildPostpartumConstraints(
 ): MovementConstraint {
   if (weeksPostpartum < 6) {
     return {
-      avoidRegions: [BodyRegion.Core, BodyRegion.LowerBack, BodyRegion.HipFlexors],
+      avoidMuscles: [Muscle.Core, Muscle.LowerBack, Muscle.HipFlexors],
+      avoidJoints: [],
       avoidTags: ["max_effort", "high_skill", "complex"],
       allowHighImpact: false,
       allowOverhead: false,
@@ -170,7 +181,8 @@ export function buildPostpartumConstraints(
 
   if (weeksPostpartum < 12) {
     return {
-      avoidRegions: [BodyRegion.Core],
+      avoidMuscles: [Muscle.Core],
+      avoidJoints: [],
       avoidTags: ["max_effort", "high_skill"],
       allowHighImpact: false,
       allowOverhead: true,
@@ -186,7 +198,8 @@ export function buildPostpartumConstraints(
 
   // 12+ weeks
   return {
-    avoidRegions: [],
+    avoidMuscles: [],
+    avoidJoints: [],
     avoidTags: ["max_effort"],
     allowHighImpact: true,
     allowOverhead: true,
@@ -201,13 +214,16 @@ export function buildPostpartumConstraints(
 }
 
 export function buildInjuryConstraints(
-  affectedRegions: BodyRegion[],
+  affected: AffectedBodyParts,
   severity: ImpedimentSeverity
 ): MovementConstraint {
+  const affectedNames = [...new Set([...affected.muscles, ...affected.joints])];
+
   switch (severity) {
     case ImpedimentSeverity.Mild:
       return {
-        avoidRegions: [],
+        avoidMuscles: [],
+        avoidJoints: [],
         avoidTags: ["max_effort"],
         allowHighImpact: true,
         allowOverhead: true,
@@ -216,50 +232,58 @@ export function buildInjuryConstraints(
         allowKipping: true,
         allowHeavyAxialLoad: true,
         maxLoadPercent: 80,
-        notes: `Mild issue in ${affectedRegions.join(", ")}. Reduce load, monitor pain. Stop if pain increases.`,
+        notes: `Mild issue in ${affectedNames.join(", ")}. Reduce load, monitor pain. Stop if pain increases.`,
       };
     case ImpedimentSeverity.Moderate:
       return {
-        avoidRegions: affectedRegions,
+        avoidMuscles: affected.muscles,
+        avoidJoints: affected.joints,
         avoidTags: ["max_effort", "high_skill"],
-        allowHighImpact: affectedRegions.every(
-          (r) =>
-            ![
-              BodyRegion.Knees,
-              BodyRegion.Ankles,
-              BodyRegion.Hips,
-              BodyRegion.Spine,
-            ].includes(r)
+        allowHighImpact: affected.joints.every(
+          (joint) =>
+            ![Joint.Knees, Joint.Ankles, Joint.Hips, Joint.Spine].includes(joint)
         ),
-        allowOverhead: affectedRegions.every(
-          (r) =>
-            ![BodyRegion.Shoulders, BodyRegion.Elbows, BodyRegion.Wrists].includes(r)
-        ),
-        allowInversion: affectedRegions.every(
-          (r) =>
-            ![BodyRegion.Wrists, BodyRegion.Shoulders, BodyRegion.Neck, BodyRegion.Spine].includes(r)
-        ),
-        allowProne: !affectedRegions.includes(BodyRegion.Spine),
+        allowOverhead:
+          !affected.muscles.includes(Muscle.Shoulders) &&
+          affected.joints.every(
+            (joint) =>
+              ![Joint.Shoulders, Joint.Elbows, Joint.Wrists].includes(joint)
+          ),
+        allowInversion:
+          !affected.muscles.includes(Muscle.Shoulders) &&
+          affected.joints.every(
+            (joint) =>
+              ![
+                Joint.Shoulders,
+                Joint.Wrists,
+                Joint.Neck,
+                Joint.Spine,
+              ].includes(joint)
+          ),
+        allowProne: !affected.joints.includes(Joint.Spine),
         allowKipping: false,
-        allowHeavyAxialLoad: !affectedRegions.includes(BodyRegion.Spine),
+        allowHeavyAxialLoad: !affected.joints.includes(Joint.Spine),
         maxLoadPercent: 50,
-        notes: `Moderate issue in ${affectedRegions.join(", ")}. Avoid direct stress. Use alternatives.`,
+        notes: `Moderate issue in ${affectedNames.join(", ")}. Avoid direct stress. Use alternatives.`,
       };
     case ImpedimentSeverity.Severe:
       return {
-        avoidRegions: affectedRegions,
+        avoidMuscles: affected.muscles,
+        avoidJoints: affected.joints,
         avoidTags: ["max_effort", "high_skill", "complex"],
         allowHighImpact: false,
-        allowOverhead: affectedRegions.every(
-          (r) =>
-            ![BodyRegion.Shoulders, BodyRegion.Elbows, BodyRegion.Wrists].includes(r)
-        ),
+        allowOverhead:
+          !affected.muscles.includes(Muscle.Shoulders) &&
+          affected.joints.every(
+            (joint) =>
+              ![Joint.Shoulders, Joint.Elbows, Joint.Wrists].includes(joint)
+          ),
         allowInversion: false,
         allowProne: false,
         allowKipping: false,
         allowHeavyAxialLoad: false,
         maxLoadPercent: 0,
-        notes: `Severe issue in ${affectedRegions.join(", ")}. Completely avoid. Seek medical guidance.`,
+        notes: `Severe issue in ${affectedNames.join(", ")}. Completely avoid. Seek medical guidance.`,
       };
   }
 }

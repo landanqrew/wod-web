@@ -203,7 +203,7 @@ export function generateSplitDay(
   blocks.push({
     type: SessionBlockType.WarmUp,
     durationMinutes: 8,
-    notes: "5min cardio + dynamic stretches targeting today's muscle groups",
+    notes: "5min cardio + dynamic stretches targeting today's Muscles",
   });
 
   // Main workout
@@ -235,7 +235,7 @@ export function generateSplitDay(
   blocks.push({
     type: SessionBlockType.CoolDown,
     durationMinutes: 5,
-    notes: "Static stretching for worked muscle groups",
+    notes: "Static stretching for worked Muscles",
   });
 
   return {

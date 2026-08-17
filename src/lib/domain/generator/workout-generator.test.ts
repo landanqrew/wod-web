@@ -9,7 +9,7 @@ import {
   ImpedimentCategory,
   ImpedimentSeverity,
 } from "../models/impediment";
-import { BodyRegion } from "../models/body";
+import { Muscle } from "../models/body";
 
 describe("generateWorkout", () => {
   it("generates an AMRAP with the correct format and structure", () => {
@@ -85,7 +85,8 @@ describe("generateWorkout", () => {
         id: "preg",
         category: ImpedimentCategory.Pregnancy,
         severity: ImpedimentSeverity.Moderate,
-        affectedRegions: [BodyRegion.Core],
+        affectedMuscles: [Muscle.Core],
+        affectedJoints: [],
         description: "Pregnancy T2",
         startDate: "2025-01-01",
         trimester: 2,
@@ -116,7 +117,8 @@ describe("generateWorkout", () => {
         id: "preg",
         category: ImpedimentCategory.Pregnancy,
         severity: ImpedimentSeverity.Moderate,
-        affectedRegions: [BodyRegion.Core],
+        affectedMuscles: [Muscle.Core],
+        affectedJoints: [],
         description: "Pregnancy T2",
         startDate: "2025-01-01",
         trimester: 2,

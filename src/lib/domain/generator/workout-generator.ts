@@ -2,7 +2,7 @@ import type { Movement } from "../models/movement";
 import type { Athlete } from "../models/athlete";
 import type { MovementPrescription, Workout } from "../models/workout";
 import { WorkoutFormat, ScoreType } from "../models/workout";
-import { Modality, MuscleGroup } from "../models/body";
+import { Modality, MovementPattern } from "../models/body";
 import { Sex } from "../models/athlete";
 import { getAllMovements } from "../movements/library";
 import { mergeConstraints, filterAllowedMovements } from "../scaling/index";
@@ -17,8 +17,8 @@ export interface GenerateOptions {
   movementCount?: number;
   /** Target modalities to include (empty = any) */
   modalities?: Modality[];
-  /** Target muscle groups to bias toward (empty = balanced) */
-  muscleGroups?: MuscleGroup[];
+  /** Target Movement Patterns to bias toward (empty = balanced) */
+  movementPatterns?: MovementPattern[];
   /** Time cap in minutes (for AMRAP, ForTime) */
   timeCap?: number;
   /** Number of rounds (for EMOM, RoundsForTime) */
@@ -178,7 +178,7 @@ function getScoreType(format: WorkoutFormat): ScoreType {
  *
  * The generator:
  * 1. Filters the movement library by athlete equipment + impediments
- * 2. Applies modality / muscle group preferences
+ * 2. Applies modality / Movement Pattern preferences
  * 3. Picks movements to create variety
  * 4. Assigns reps/loads/distances based on format and athlete sex
  */
@@ -213,11 +213,11 @@ export function generateWorkout(
     // If not enough movements in preferred modalities, use full pool
   }
 
-  // Bias toward requested muscle groups
-  if (options.muscleGroups?.length) {
-    const groupSet = new Set(options.muscleGroups);
+  // Bias toward requested Movement Patterns
+  if (options.movementPatterns?.length) {
+    const groupSet = new Set(options.movementPatterns);
     const preferred = available.filter((m) =>
-      m.muscleGroups.some((g) => groupSet.has(g))
+      m.movementPatterns.some((g) => groupSet.has(g))
     );
     if (preferred.length >= movementCount) {
       available = preferred;

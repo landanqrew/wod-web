@@ -1,4 +1,4 @@
-import { BodyRegion, Modality, MuscleGroup } from "./body";
+import { Joint, Modality, MovementPattern, Muscle } from "./body";
 import { Equipment } from "./equipment";
 
 /**
@@ -53,12 +53,14 @@ export interface Movement {
   name: string;
   /** Equipment required (ALL must be available) */
   equipment: Equipment[];
-  /** Primary body regions stressed */
-  primaryRegions: BodyRegion[];
-  /** Secondary body regions involved */
-  secondaryRegions: BodyRegion[];
-  /** High-level muscle group category */
-  muscleGroups: MuscleGroup[];
+  /** Primary Muscles trained */
+  primaryMuscles: Muscle[];
+  /** Secondary Muscles trained */
+  secondaryMuscles: Muscle[];
+  /** Joints loaded by the movement */
+  loadedJoints: Joint[];
+  /** Mechanical Movement Patterns used for balance reporting */
+  movementPatterns: MovementPattern[];
   /** Training modality */
   modality: Modality;
   /** Difficulty tier at Rx */

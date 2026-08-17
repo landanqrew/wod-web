@@ -1,6 +1,6 @@
 import type { WorkoutResult } from "../models/workout-result";
 import type { Workout } from "../models/workout";
-import { Modality, MuscleGroup } from "../models/body";
+import { Modality, MovementPattern, Muscle } from "../models/body";
 import { getMovement } from "../movements/library";
 import { filterByDateRange } from "./history";
 
@@ -8,7 +8,13 @@ import { filterByDateRange } from "./history";
  * A single bias insight with severity and recommendation.
  */
 export interface BiasInsight {
-  category: "modality" | "muscle_group" | "movement" | "format" | "frequency";
+  category:
+    | "modality"
+    | "muscle"
+    | "movement_pattern"
+    | "movement"
+    | "format"
+    | "frequency";
   severity: "info" | "warning" | "alert";
   message: string;
   recommendation: string;
@@ -24,8 +30,10 @@ export interface BiasReport {
   insights: BiasInsight[];
   /** Distribution of modalities as percentages */
   modalityDistribution: Record<string, number>;
-  /** Distribution of muscle groups as percentages */
-  muscleGroupDistribution: Record<string, number>;
+  /** Distribution of trained Muscles as percentages */
+  muscleDistribution: Record<string, number>;
+  /** Distribution of Movement Patterns as percentages */
+  movementPatternDistribution: Record<string, number>;
   /** Movements sorted by frequency (most used first) */
   movementFrequency: { movementId: string; name: string; count: number }[];
   /** Workout format distribution */
@@ -67,7 +75,8 @@ export class BiasDetector {
 
     // Collect all movement IDs and resolve metadata
     const modalityCounts = new Map<string, number>();
-    const muscleGroupCounts = new Map<string, number>();
+    const muscleCounts = new Map<string, number>();
+    const movementPatternCounts = new Map<string, number>();
     const movementCounts = new Map<string, number>();
     const formatCounts = new Map<string, number>();
 
@@ -81,7 +90,7 @@ export class BiasDetector {
         );
       }
 
-      // Count movements, modalities, and muscle groups
+      // Count movements, modalities, and Movement Patterns
       for (const mr of result.movementResults) {
         movementCounts.set(
           mr.movementId,
@@ -94,8 +103,14 @@ export class BiasDetector {
             movement.modality,
             (modalityCounts.get(movement.modality) ?? 0) + 1
           );
-          for (const mg of movement.muscleGroups) {
-            muscleGroupCounts.set(mg, (muscleGroupCounts.get(mg) ?? 0) + 1);
+          for (const mg of movement.movementPatterns) {
+            movementPatternCounts.set(mg, (movementPatternCounts.get(mg) ?? 0) + 1);
+          }
+          for (const muscle of [
+            ...movement.primaryMuscles,
+            ...movement.secondaryMuscles,
+          ]) {
+            muscleCounts.set(muscle, (muscleCounts.get(muscle) ?? 0) + 1);
           }
         }
       }
@@ -110,12 +125,21 @@ export class BiasDetector {
         : 0;
     }
 
-    const muscleGroupTotal = sumValues(muscleGroupCounts);
-    const muscleGroupDistribution: Record<string, number> = {};
-    for (const mg of Object.values(MuscleGroup)) {
-      muscleGroupDistribution[mg] = muscleGroupTotal > 0
-        ? Math.round(((muscleGroupCounts.get(mg) ?? 0) / muscleGroupTotal) * 100)
+    const movementPatternTotal = sumValues(movementPatternCounts);
+    const movementPatternDistribution: Record<string, number> = {};
+    for (const mg of Object.values(MovementPattern)) {
+      movementPatternDistribution[mg] = movementPatternTotal > 0
+        ? Math.round(((movementPatternCounts.get(mg) ?? 0) / movementPatternTotal) * 100)
         : 0;
+    }
+
+    const muscleTotal = sumValues(muscleCounts);
+    const muscleDistribution: Record<string, number> = {};
+    for (const muscle of Object.values(Muscle)) {
+      muscleDistribution[muscle] =
+        muscleTotal > 0
+          ? Math.round(((muscleCounts.get(muscle) ?? 0) / muscleTotal) * 100)
+          : 0;
     }
 
     const formatDistribution: Record<string, number> = {};
@@ -136,7 +160,7 @@ export class BiasDetector {
     // Generate insights only if there's enough data
     if (results.length >= 3) {
       insights.push(...this.detectModalityBias(modalityCounts, modalityTotal, periodDays));
-      insights.push(...this.detectMuscleGroupBias(muscleGroupCounts, muscleGroupTotal, periodDays));
+      insights.push(...this.detectMovementPatternBias(movementPatternCounts, movementPatternTotal, periodDays));
       insights.push(...this.detectMovementBias(movementCounts, results.length));
       insights.push(...this.detectFormatBias(formatCounts, results.length));
       insights.push(...this.detectFrequencyPatterns(results, periodDays));
@@ -154,7 +178,8 @@ export class BiasDetector {
       totalWorkouts: results.length,
       insights,
       modalityDistribution,
-      muscleGroupDistribution,
+      muscleDistribution,
+      movementPatternDistribution,
       movementFrequency,
       formatDistribution,
     };
@@ -195,7 +220,7 @@ export class BiasDetector {
     return insights;
   }
 
-  private detectMuscleGroupBias(
+  private detectMovementPatternBias(
     counts: Map<string, number>,
     total: number,
     periodDays: number
@@ -203,7 +228,7 @@ export class BiasDetector {
     const insights: BiasInsight[] = [];
     if (total === 0) return insights;
 
-    const allGroups = Object.values(MuscleGroup);
+    const allGroups = Object.values(MovementPattern);
     const groupLabels: Record<string, string> = {
       push: "pushing (press, push-up, dip)",
       pull: "pulling (pull-up, row, clean)",
@@ -219,36 +244,36 @@ export class BiasDetector {
 
       if (count === 0 && periodDays >= 14) {
         insights.push({
-          category: "muscle_group",
+          category: "movement_pattern",
           severity: "alert",
           message: `No ${groupLabels[mg] ?? mg} in the last ${periodDays} days`,
           recommendation: `Include ${mg} movements in upcoming workouts.`,
         });
       } else if (pct > 40 && total >= 10) {
         insights.push({
-          category: "muscle_group",
+          category: "movement_pattern",
           severity: "warning",
           message: `${Math.round(pct)}% of volume is ${mg} movements`,
-          recommendation: `Balance your programming with more variety across muscle groups.`,
+          recommendation: `Balance your programming with more variety across Movement Patterns.`,
         });
       }
     }
 
     // Check push/pull balance
-    const pushCount = counts.get(MuscleGroup.Push) ?? 0;
-    const pullCount = counts.get(MuscleGroup.Pull) ?? 0;
+    const pushCount = counts.get(MovementPattern.Push) ?? 0;
+    const pullCount = counts.get(MovementPattern.Pull) ?? 0;
     if (pushCount > 0 && pullCount > 0) {
       const ratio = pushCount / pullCount;
       if (ratio > 2) {
         insights.push({
-          category: "muscle_group",
+          category: "movement_pattern",
           severity: "warning",
           message: `Push-to-pull ratio is ${ratio.toFixed(1)}:1 (${pushCount} push vs ${pullCount} pull)`,
           recommendation: "Add more pulling movements (rows, pull-ups, cleans) for shoulder health.",
         });
       } else if (ratio < 0.5) {
         insights.push({
-          category: "muscle_group",
+          category: "movement_pattern",
           severity: "info",
           message: `Pull-to-push ratio is ${(1/ratio).toFixed(1)}:1 (${pullCount} pull vs ${pushCount} push)`,
           recommendation: "Consider adding more pressing movements for balance.",

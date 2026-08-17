@@ -5,7 +5,7 @@ import {
   buildInjuryConstraints,
   ImpedimentSeverity,
 } from "../models/impediment";
-import { BodyRegion } from "../models/body";
+import { Joint, Muscle } from "../models/body";
 import { EQUIPMENT_PRESETS } from "../models/equipment";
 import { getMovementOrThrow } from "../movements/library";
 
@@ -72,7 +72,16 @@ describe("findSubstitution", () => {
     // (e.g., push_up, bench_press, floor_press)
     expect(result.replacement).not.toBeNull();
     expect(result.replacement!.tags).not.toContain("overhead");
-    expect(result.replacement!.muscleGroups).toContain("push");
+    const originalMuscles = new Set([
+      ...strictPress.primaryMuscles,
+      ...strictPress.secondaryMuscles,
+    ]);
+    expect(
+      [
+        ...result.replacement!.primaryMuscles,
+        ...result.replacement!.secondaryMuscles,
+      ].some((muscle) => originalMuscles.has(muscle))
+    ).toBe(true);
   });
 
   it("includes fallback warning when using broad muscle-group search", () => {
@@ -84,7 +93,7 @@ describe("findSubstitution", () => {
       EQUIPMENT_PRESETS.fullGym
     );
     expect(result.replacementWarnings).toContain(
-      "Substituted via muscle-group fallback (not a direct substitution)"
+      "Substituted via shared-Muscle fallback (not a direct substitution)"
     );
   });
 
@@ -102,9 +111,12 @@ describe("findSubstitution", () => {
   });
 
   it("returns null replacement when no valid substitute exists", () => {
-    // Severe shoulder injury + bodyweight only
+    // Every Muscle is protected, so no movement can be a valid fallback.
     const constraints = buildInjuryConstraints(
-      [BodyRegion.Shoulders, BodyRegion.Chest, BodyRegion.Triceps],
+      {
+        muscles: Object.values(Muscle),
+        joints: [],
+      },
       ImpedimentSeverity.Severe
     );
     const hspu = getMovementOrThrow("handstand_push_up");
@@ -113,9 +125,39 @@ describe("findSubstitution", () => {
       constraints,
       EQUIPMENT_PRESETS.bodyweight
     );
-    // HSPU subs are push_up (chest/triceps), dumbbell_press (shoulders), strict_press (shoulders), pike_push_up (shoulders)
-    // All stress restricted regions
     expect(result.replacement).toBeNull();
+  });
+
+  it("offers a safe Substitution for a movement blocked by a Joint Impediment", () => {
+    const constraints = buildInjuryConstraints(
+      { muscles: [], joints: [Joint.Knees] },
+      ImpedimentSeverity.Moderate
+    );
+
+    const result = findSubstitution(
+      getMovementOrThrow("back_squat"),
+      constraints,
+      EQUIPMENT_PRESETS.fullGym
+    );
+
+    expect(result.replacement).not.toBeNull();
+    expect(result.replacement!.loadedJoints).not.toContain(Joint.Knees);
+  });
+
+  it("substitutes unweighted squatting for axial load with a Spine Impediment", () => {
+    const constraints = buildInjuryConstraints(
+      { muscles: [], joints: [Joint.Spine] },
+      ImpedimentSeverity.Moderate
+    );
+
+    const result = findSubstitution(
+      getMovementOrThrow("back_squat"),
+      constraints,
+      EQUIPMENT_PRESETS.fullGym
+    );
+
+    expect(result.replacement?.id).toBe("air_squat");
+    expect(result.replacement!.loadedJoints).not.toContain(Joint.Spine);
   });
 });
 

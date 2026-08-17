@@ -1,15 +1,16 @@
 import type { Workout } from "../models/workout";
 import type { Movement } from "../models/movement";
-import { BodyRegion, Modality } from "../models/body";
+import { Joint, Muscle, Modality } from "../models/body";
 import { getMovement } from "../movements/library";
 
 /**
- * A warm-up drill with description and target regions.
+ * A warm-up drill with description and target muscles.
  */
 export interface WarmUpDrill {
   name: string;
   durationOrReps: string;
-  targetRegions: BodyRegion[];
+  targetMuscles: Muscle[];
+  targetJoints?: Joint[];
   notes?: string;
 }
 
@@ -20,157 +21,165 @@ const GENERAL_WARMUP: WarmUpDrill[] = [
   {
     name: "Easy Jog / Row",
     durationOrReps: "2 min",
-    targetRegions: [],
+    targetMuscles: [],
     notes: "Get blood flowing at conversational pace",
   },
   {
     name: "Jumping Jacks",
     durationOrReps: "20 reps",
-    targetRegions: [BodyRegion.Shoulders, BodyRegion.Calves],
+    targetMuscles: [Muscle.Shoulders, Muscle.Calves],
   },
 ];
 
 /**
  * Region-specific mobility and activation drills.
  */
-const REGION_DRILLS: Record<string, WarmUpDrill[]> = {
-  [BodyRegion.Shoulders]: [
+const BODY_PART_DRILLS: Record<string, WarmUpDrill[]> = {
+  [Muscle.Shoulders]: [
     {
       name: "Arm Circles",
       durationOrReps: "10 each direction",
-      targetRegions: [BodyRegion.Shoulders],
+      targetMuscles: [Muscle.Shoulders],
     },
     {
       name: "PVC Pass-throughs",
       durationOrReps: "10 reps",
-      targetRegions: [BodyRegion.Shoulders, BodyRegion.Chest],
+      targetMuscles: [Muscle.Shoulders, Muscle.Chest],
     },
     {
       name: "Band Pull-Aparts",
       durationOrReps: "15 reps",
-      targetRegions: [BodyRegion.Shoulders, BodyRegion.UpperBack],
+      targetMuscles: [Muscle.Shoulders, Muscle.UpperBack],
     },
   ],
-  [BodyRegion.Hips]: [
+  [Joint.Hips]: [
     {
       name: "Hip Circles",
       durationOrReps: "10 each direction",
-      targetRegions: [BodyRegion.Hips, BodyRegion.Glutes],
+      targetMuscles: [Muscle.Glutes],
+      targetJoints: [Joint.Hips],
     },
     {
       name: "Pigeon Stretch",
       durationOrReps: "30s each side",
-      targetRegions: [BodyRegion.Hips, BodyRegion.Glutes],
+      targetMuscles: [Muscle.Glutes],
+      targetJoints: [Joint.Hips],
     },
   ],
-  [BodyRegion.Quads]: [
+  [Muscle.Quads]: [
     {
       name: "Walking Quad Stretch",
       durationOrReps: "10 each side",
-      targetRegions: [BodyRegion.Quads, BodyRegion.HipFlexors],
+      targetMuscles: [Muscle.Quads, Muscle.HipFlexors],
     },
     {
       name: "Bodyweight Squats",
       durationOrReps: "10 reps",
-      targetRegions: [BodyRegion.Quads, BodyRegion.Glutes],
+      targetMuscles: [Muscle.Quads, Muscle.Glutes],
     },
   ],
-  [BodyRegion.Hamstrings]: [
+  [Muscle.Hamstrings]: [
     {
       name: "Inchworms",
       durationOrReps: "5 reps",
-      targetRegions: [BodyRegion.Hamstrings, BodyRegion.Core],
+      targetMuscles: [Muscle.Hamstrings, Muscle.Core],
     },
     {
       name: "Good Mornings (empty bar or BW)",
       durationOrReps: "10 reps",
-      targetRegions: [BodyRegion.Hamstrings, BodyRegion.LowerBack],
+      targetMuscles: [Muscle.Hamstrings, Muscle.LowerBack],
     },
   ],
-  [BodyRegion.Glutes]: [
+  [Muscle.Glutes]: [
     {
       name: "Glute Bridges",
       durationOrReps: "10 reps",
-      targetRegions: [BodyRegion.Glutes, BodyRegion.Hamstrings],
+      targetMuscles: [Muscle.Glutes, Muscle.Hamstrings],
     },
     {
       name: "Clamshells",
       durationOrReps: "10 each side",
-      targetRegions: [BodyRegion.Glutes, BodyRegion.Hips],
+      targetMuscles: [Muscle.Glutes],
+      targetJoints: [Joint.Hips],
     },
   ],
-  [BodyRegion.Core]: [
+  [Muscle.Core]: [
     {
       name: "Dead Bugs",
       durationOrReps: "10 reps",
-      targetRegions: [BodyRegion.Core],
+      targetMuscles: [Muscle.Core],
     },
     {
       name: "Plank Hold",
       durationOrReps: "30s",
-      targetRegions: [BodyRegion.Core, BodyRegion.Shoulders],
+      targetMuscles: [Muscle.Core, Muscle.Shoulders],
     },
   ],
-  [BodyRegion.Chest]: [
+  [Muscle.Chest]: [
     {
       name: "Push-Up to Down Dog",
       durationOrReps: "8 reps",
-      targetRegions: [BodyRegion.Chest, BodyRegion.Shoulders],
+      targetMuscles: [Muscle.Chest, Muscle.Shoulders],
     },
   ],
-  [BodyRegion.UpperBack]: [
+  [Muscle.UpperBack]: [
     {
       name: "Cat-Cow Stretch",
       durationOrReps: "10 reps",
-      targetRegions: [BodyRegion.UpperBack, BodyRegion.LowerBack],
+      targetMuscles: [Muscle.UpperBack, Muscle.LowerBack],
     },
     {
       name: "Scapular Pull-Ups",
       durationOrReps: "10 reps",
-      targetRegions: [BodyRegion.UpperBack, BodyRegion.Lats],
+      targetMuscles: [Muscle.UpperBack, Muscle.Lats],
     },
   ],
-  [BodyRegion.Wrists]: [
+  [Joint.Wrists]: [
     {
       name: "Wrist Circles",
       durationOrReps: "10 each direction",
-      targetRegions: [BodyRegion.Wrists],
+      targetMuscles: [],
+      targetJoints: [Joint.Wrists],
     },
     {
       name: "Wrist Flexor Stretch",
       durationOrReps: "20s each",
-      targetRegions: [BodyRegion.Wrists, BodyRegion.Forearms],
+      targetMuscles: [Muscle.Forearms],
+      targetJoints: [Joint.Wrists],
     },
   ],
-  [BodyRegion.Ankles]: [
+  [Joint.Ankles]: [
     {
       name: "Ankle Circles",
       durationOrReps: "10 each direction",
-      targetRegions: [BodyRegion.Ankles, BodyRegion.Calves],
+      targetMuscles: [Muscle.Calves],
+      targetJoints: [Joint.Ankles],
     },
     {
       name: "Wall Ankle Stretch",
       durationOrReps: "30s each side",
-      targetRegions: [BodyRegion.Ankles, BodyRegion.Calves],
+      targetMuscles: [Muscle.Calves],
+      targetJoints: [Joint.Ankles],
     },
   ],
-  [BodyRegion.LowerBack]: [
+  [Muscle.LowerBack]: [
     {
       name: "Cat-Cow Stretch",
       durationOrReps: "10 reps",
-      targetRegions: [BodyRegion.LowerBack, BodyRegion.Core],
+      targetMuscles: [Muscle.LowerBack, Muscle.Core],
     },
     {
       name: "Scorpion Stretch",
       durationOrReps: "5 each side",
-      targetRegions: [BodyRegion.LowerBack, BodyRegion.Hips],
+      targetMuscles: [Muscle.LowerBack],
+      targetJoints: [Joint.Hips],
     },
   ],
-  [BodyRegion.Calves]: [
+  [Muscle.Calves]: [
     {
       name: "Calf Raises",
       durationOrReps: "15 reps",
-      targetRegions: [BodyRegion.Calves],
+      targetMuscles: [Muscle.Calves],
     },
   ],
 };
@@ -183,7 +192,8 @@ const MODALITY_WARMUP: Partial<Record<Modality, WarmUpDrill[]>> = {
     {
       name: "Empty Barbell Complex",
       durationOrReps: "5 reps each",
-      targetRegions: [BodyRegion.Shoulders, BodyRegion.Hips],
+      targetMuscles: [Muscle.Shoulders],
+      targetJoints: [Joint.Hips],
       notes: "Deadlift, Hang Clean, Front Squat, Press, Back Squat",
     },
   ],
@@ -191,12 +201,12 @@ const MODALITY_WARMUP: Partial<Record<Modality, WarmUpDrill[]>> = {
     {
       name: "Hollow Body Hold",
       durationOrReps: "20s",
-      targetRegions: [BodyRegion.Core],
+      targetMuscles: [Muscle.Core],
     },
     {
       name: "Kipping Swings",
       durationOrReps: "10 reps",
-      targetRegions: [BodyRegion.Shoulders, BodyRegion.Core],
+      targetMuscles: [Muscle.Shoulders, Muscle.Core],
       notes: "If pull-up bar movements are in the WOD",
     },
   ],
@@ -204,7 +214,7 @@ const MODALITY_WARMUP: Partial<Record<Modality, WarmUpDrill[]>> = {
     {
       name: "Dynamic Stretching",
       durationOrReps: "1 min",
-      targetRegions: [BodyRegion.Quads, BodyRegion.Hamstrings, BodyRegion.Calves],
+      targetMuscles: [Muscle.Quads, Muscle.Hamstrings, Muscle.Calves],
       notes: "High knees, butt kicks, leg swings",
     },
   ],
@@ -223,8 +233,9 @@ export function generateWarmUp(workout: Workout): WarmUpDrill[] {
     usedDrillNames.add(drill.name);
   }
 
-  // 2. Collect all body regions and modalities from the workout
-  const regions = new Set<BodyRegion>();
+  // 2. Collect all body muscles and modalities from the workout
+  const muscles = new Set<Muscle>();
+  const joints = new Set<Joint>();
   const modalities = new Set<Modality>();
 
   for (const p of workout.movements) {
@@ -233,17 +244,31 @@ export function generateWarmUp(workout: Workout): WarmUpDrill[] {
     if (!movement) continue;
 
     modalities.add(movement.modality);
-    for (const r of movement.primaryRegions) regions.add(r);
-    for (const r of movement.secondaryRegions) regions.add(r);
+    for (const r of movement.primaryMuscles) muscles.add(r);
+    for (const r of movement.secondaryMuscles) muscles.add(r);
+    for (const joint of movement.loadedJoints) joints.add(joint);
   }
 
-  // 3. Add region-specific drills (pick 1 per region to keep warm-up concise)
-  for (const region of regions) {
-    const regionDrills = REGION_DRILLS[region];
-    if (!regionDrills) continue;
+  // 3. Add muscle-specific drills (pick 1 per muscle to keep warm-up concise)
+  for (const muscle of muscles) {
+    const muscleDrills = BODY_PART_DRILLS[muscle];
+    if (!muscleDrills) continue;
 
     // Pick the first drill we haven't used yet
-    for (const drill of regionDrills) {
+    for (const drill of muscleDrills) {
+      if (!usedDrillNames.has(drill.name)) {
+        drills.push(drill);
+        usedDrillNames.add(drill.name);
+        break;
+      }
+    }
+  }
+
+  for (const joint of joints) {
+    const jointDrills = BODY_PART_DRILLS[joint];
+    if (!jointDrills) continue;
+
+    for (const drill of jointDrills) {
       if (!usedDrillNames.has(drill.name)) {
         drills.push(drill);
         usedDrillNames.add(drill.name);
@@ -269,64 +294,66 @@ export function generateWarmUp(workout: Workout): WarmUpDrill[] {
 }
 
 /**
- * Generate simple cool-down stretches targeting the regions used in the workout.
+ * Generate simple cool-down stretches targeting the muscles used in the workout.
  */
 export interface CoolDownDrill {
   name: string;
   duration: string;
-  targetRegions: BodyRegion[];
+  targetMuscles: Muscle[];
+  targetJoints?: Joint[];
 }
 
 const COOLDOWN_DRILLS: CoolDownDrill[] = [
-  { name: "Easy Walk / Slow Row", duration: "2 min", targetRegions: [] },
+  { name: "Easy Walk / Slow Row", duration: "2 min", targetMuscles: [] },
   {
     name: "Standing Forward Fold",
     duration: "30s",
-    targetRegions: [BodyRegion.Hamstrings, BodyRegion.LowerBack],
+    targetMuscles: [Muscle.Hamstrings, Muscle.LowerBack],
   },
   {
     name: "Couch Stretch",
     duration: "30s each side",
-    targetRegions: [BodyRegion.Quads, BodyRegion.HipFlexors],
+    targetMuscles: [Muscle.Quads, Muscle.HipFlexors],
   },
   {
     name: "Child's Pose",
     duration: "30s",
-    targetRegions: [BodyRegion.LowerBack, BodyRegion.Shoulders, BodyRegion.Lats],
+    targetMuscles: [Muscle.LowerBack, Muscle.Shoulders, Muscle.Lats],
   },
   {
     name: "Pigeon Stretch",
     duration: "30s each side",
-    targetRegions: [BodyRegion.Hips, BodyRegion.Glutes],
+    targetMuscles: [Muscle.Glutes],
+    targetJoints: [Joint.Hips],
   },
   {
     name: "Doorway Chest Stretch",
     duration: "30s each side",
-    targetRegions: [BodyRegion.Chest, BodyRegion.Shoulders],
+    targetMuscles: [Muscle.Chest, Muscle.Shoulders],
   },
   {
     name: "Cross-Body Shoulder Stretch",
     duration: "30s each side",
-    targetRegions: [BodyRegion.Shoulders],
+    targetMuscles: [Muscle.Shoulders],
   },
   {
     name: "Lying Spinal Twist",
     duration: "30s each side",
-    targetRegions: [BodyRegion.LowerBack, BodyRegion.Obliques],
+    targetMuscles: [Muscle.LowerBack, Muscle.Obliques],
   },
 ];
 
 /**
- * Generate a cool-down based on the workout's target regions.
+ * Generate a cool-down based on the workout's target muscles.
  */
 export function generateCoolDown(workout: Workout): CoolDownDrill[] {
-  const regions = new Set<BodyRegion>();
+  const muscles = new Set<Muscle>();
 
   for (const p of workout.movements) {
     const movement: Movement | undefined =
       p.movement ?? getMovement(p.movementId);
     if (!movement) continue;
-    for (const r of movement.primaryRegions) regions.add(r);
+    for (const r of movement.primaryMuscles) muscles.add(r);
   }
 
   const drills: CoolDownDrill[] = [];
@@ -334,9 +361,9 @@ export function generateCoolDown(workout: Workout): CoolDownDrill[] {
   // Always include the easy walk
   drills.push(COOLDOWN_DRILLS[0]);
 
-  // Pick stretches that target the worked regions
+  // Pick stretches that target the worked muscles
   for (const drill of COOLDOWN_DRILLS.slice(1)) {
-    if (drill.targetRegions.some((r) => regions.has(r))) {
+    if (drill.targetMuscles.some((r) => muscles.has(r))) {
       drills.push(drill);
     }
   }

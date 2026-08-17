@@ -2,7 +2,7 @@ import { z } from "zod";
 import { WorkoutFormat, ScoreType, SessionBlockType } from "@/lib/domain/models/workout";
 import { Sex } from "@/lib/domain/models/athlete";
 import { Equipment } from "@/lib/domain/models/equipment";
-import { BodyRegion, Modality, MuscleGroup } from "@/lib/domain/models/body";
+import { Joint, Modality, MovementPattern, Muscle } from "@/lib/domain/models/body";
 import { DifficultyTier } from "@/lib/domain/models/movement";
 import {
   ImpedimentCategory,
@@ -42,7 +42,7 @@ export const generateOptionsSchema = z.object({
   format: enumOf(WorkoutFormat),
   movementCount: z.number().int().min(1).max(10).optional(),
   modalities: z.array(enumOf(Modality)).optional(),
-  muscleGroups: z.array(enumOf(MuscleGroup)).optional(),
+  movementPatterns: z.array(enumOf(MovementPattern)).optional(),
   timeCap: z.number().int().min(1).max(120).optional(),
   rounds: z.number().int().min(1).max(50).optional(),
   emomMinutes: z.number().int().min(1).max(90).optional(),
@@ -79,7 +79,8 @@ export const logResultSchema = z.object({
 export const impedimentInputSchema = z.object({
   category: enumOf(ImpedimentCategory),
   severity: enumOf(ImpedimentSeverity),
-  affectedRegions: z.array(enumOf(BodyRegion)).max(24),
+  affectedMuscles: z.array(enumOf(Muscle)).max(24),
+  affectedJoints: z.array(enumOf(Joint)).max(24),
   description: z.string().max(400).default(""),
   startDate: z.string().min(4),
   endDate: z.string().min(4).optional(),

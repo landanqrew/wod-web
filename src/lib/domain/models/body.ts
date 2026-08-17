@@ -1,11 +1,5 @@
-/**
- * Body regions used for:
- * - Tagging which areas a movement stresses
- * - Flagging injury/impediment locations
- * - Tracking volume distribution across the body
- */
-export enum BodyRegion {
-  // Upper body
+/** Muscles that a movement trains. */
+export enum Muscle {
   Shoulders = "shoulders",
   Chest = "chest",
   UpperBack = "upper_back",
@@ -24,7 +18,11 @@ export enum BodyRegion {
   Calves = "calves",
   HipFlexors = "hip_flexors",
   Adductors = "adductors",
-  // Joints (important for impediments)
+}
+
+/** Articulations that a movement loads and an Impediment can protect. */
+export enum Joint {
+  Shoulders = "shoulders",
   Wrists = "wrists",
   Elbows = "elbows",
   Knees = "knees",
@@ -34,10 +32,8 @@ export enum BodyRegion {
   Neck = "neck",
 }
 
-/**
- * Broader muscle group categories for high-level volume tracking.
- */
-export enum MuscleGroup {
+/** Mechanical movement shapes used only for balance reporting. */
+export enum MovementPattern {
   Push = "push",
   Pull = "pull",
   Squat = "squat",
