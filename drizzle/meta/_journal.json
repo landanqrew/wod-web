@@ -15,6 +15,13 @@
       "when": 1786987111852,
       "tag": "0001_kind_toad_men",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787002300496,
+      "tag": "0002_dashing_korath",
+      "breakpoints": true
     }
   ]
 }
