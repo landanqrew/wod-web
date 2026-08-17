@@ -5,3 +5,4 @@ export * from "./movement";
 export * from "./workout";
 export * from "./workout-result";
 export * from "./athlete";
+export * from "./gym";
