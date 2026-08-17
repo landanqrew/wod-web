@@ -14,7 +14,7 @@ import {
   personaliseWorkout,
   UnableToPersonaliseWorkoutError,
 } from "./personalise-workout";
-import { createMovementPrescription } from "./prescription";
+import { createMovementPrescription } from "../prescription";
 
 function workoutWith(movementId: string, load?: number): Workout {
   const movement = getMovementOrThrow(movementId);

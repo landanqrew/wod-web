@@ -1,12 +1,12 @@
-import { Sex } from "../models/athlete";
-import { Modality } from "../models/body";
-import type { Movement } from "../models/movement";
+import { Sex } from "./models/athlete";
+import { Modality } from "./models/body";
+import type { Movement } from "./models/movement";
 import {
   WorkoutFormat,
   type MovementPrescription,
-} from "../models/workout";
+} from "./models/workout";
 
-/** Build a coherent default prescription for a Movement and Workout format. */
+/** Build a coherent athlete-specific prescription for a Movement and format. */
 export function createMovementPrescription(
   movement: Movement,
   format: WorkoutFormat,
@@ -45,6 +45,7 @@ export function createMovementPrescription(
 export function createProgrammedMovementPrescription(
   movement: Movement,
   format: WorkoutFormat,
+  calorieTarget?: number,
 ): MovementPrescription {
   const prescription: MovementPrescription = {
     movementId: movement.id,
@@ -71,7 +72,7 @@ export function createProgrammedMovementPrescription(
       prescription.distance = getDefaultDistance(format);
       break;
     case "calories":
-      prescription.calories = getProgrammedCalories(format);
+      prescription.calories = calorieTarget ?? getProgrammedCalories(format);
       break;
     case "duration":
       prescription.duration = getDefaultDuration();

@@ -1,5 +1,5 @@
-import type { Athlete } from "../models/athlete";
-import type { Workout } from "../models/workout";
+import { Sex, type Athlete } from "../models/athlete";
+import { WorkoutFormat, type Workout } from "../models/workout";
 import { getAllMovements } from "../movements";
 import { personaliseWorkout } from "../personalisation";
 import {
@@ -37,9 +37,22 @@ export function generateWorkout(
     },
     {
       ...options,
+      calorieTarget: getSoloCalorieTarget(options.format, athlete.sex),
       excludeMovements: [...excludedMovements],
     },
   );
 
   return personaliseWorkout(programmedWorkout, athlete).workout;
+}
+
+function getSoloCalorieTarget(format: WorkoutFormat, sex: Sex): number {
+  const base = sex === Sex.Male ? 15 : 12;
+  switch (format) {
+    case WorkoutFormat.EMOM:
+      return Math.round(base * 0.7);
+    case WorkoutFormat.Chipper:
+      return base * 2;
+    default:
+      return base;
+  }
 }

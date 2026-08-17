@@ -3,6 +3,7 @@ import { Equipment, EQUIPMENT_PRESETS } from "../models/equipment";
 import { Muscle } from "../models/body";
 import { WorkoutFormat, type RxPair } from "../models/workout";
 import type { Athlete } from "../models/athlete";
+import { getAllMovements } from "../movements";
 import {
   programWorkout,
   type ProgrammingContext,
@@ -33,6 +34,27 @@ describe("programWorkout", () => {
         ),
       ).toBe(true);
     }
+  });
+
+  it("treats equipment with zero declared Stations as unavailable", () => {
+    const workout = programWorkout(
+      {
+        floor: {
+          availableEquipment: new Set([Equipment.Rower]),
+          stationCounts: { [Equipment.Rower]: 0 },
+        },
+        avoidedMuscles: new Set(),
+      },
+      {
+        format: WorkoutFormat.AMRAP,
+        movementCount: 1,
+        excludeMovements: getAllMovements()
+          .filter(({ id }) => id !== "row")
+          .map(({ id }) => id),
+      },
+    );
+
+    expect(workout.movements).toEqual([]);
   });
 
   it("omits Movements loading an avoided Muscle", () => {

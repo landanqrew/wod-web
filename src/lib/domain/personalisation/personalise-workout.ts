@@ -3,7 +3,7 @@ import type { MovementPrescription, Workout } from "../models/workout";
 import { getMovement } from "../movements/library";
 import { mergeConstraints } from "../scaling/constraint-engine";
 import { findSubstitution } from "../scaling/substitution";
-import { createMovementPrescription } from "./prescription";
+import { createMovementPrescription } from "../prescription";
 
 export type PersonalisationContext = Pick<
   Athlete,

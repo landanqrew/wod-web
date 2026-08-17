@@ -11,6 +11,7 @@ import {
   ImpedimentSeverity,
 } from "../models/impediment";
 import { Muscle } from "../models/body";
+import { getAllMovements } from "../movements";
 
 describe("generateWorkout", () => {
   it("generates an AMRAP with the correct format and structure", () => {
@@ -191,6 +192,25 @@ describe("generateWorkout", () => {
       random.mockRestore();
       now.mockRestore();
     }
+  });
+
+  it("preserves the female calorie target through the composed solo path", () => {
+    const athlete = createAthlete("test", "Test", Sex.Female, [
+      ...EQUIPMENT_PRESETS.fullGym,
+    ]);
+    const workout = generateWorkout(athlete, {
+      format: WorkoutFormat.AMRAP,
+      movementCount: 1,
+      excludeMovements: getAllMovements()
+        .filter(({ id }) => id !== "row")
+        .map(({ id }) => id),
+    });
+
+    expect(workout.movements).toHaveLength(1);
+    expect(workout.movements[0]).toMatchObject({
+      movementId: "row",
+      calories: 12,
+    });
   });
 
   it("generates a chipper with more movements", () => {

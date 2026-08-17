@@ -6,7 +6,7 @@ import {
 import type { Movement } from "../models/movement";
 import { ScoreType, WorkoutFormat, type Workout } from "../models/workout";
 import { getAllMovements } from "../movements/library";
-import { createProgrammedMovementPrescription } from "../personalisation/prescription";
+import { createProgrammedMovementPrescription } from "../prescription";
 import { filterAllowedMovements } from "../scaling";
 
 export interface ProgrammingFloor {
@@ -27,6 +27,8 @@ export interface ProgramOptions {
   timeCap?: number;
   rounds?: number;
   emomMinutes?: number;
+  /** Explicit calorie prescription; useful for compatibility or coach intent. */
+  calorieTarget?: number;
   excludeMovements?: string[];
 }
 
@@ -61,10 +63,16 @@ export function programWorkout(
 ): Workout {
   const defaults = FORMAT_DEFAULTS[options.format];
   const movementCount = options.movementCount ?? defaults.movementCount;
+  const availableEquipment = new Set(
+    [...context.floor.availableEquipment].filter((equipment) => {
+      const stations = context.floor.stationCounts?.[equipment];
+      return stations === undefined || stations > 0;
+    }),
+  );
   let available = filterAllowedMovements(
     getAllMovements(),
     null,
-    context.floor.availableEquipment,
+    availableEquipment,
   );
 
   if (context.avoidedMuscles.size > 0) {
@@ -103,7 +111,11 @@ export function programWorkout(
     name: formatWorkoutName(options.format, selected),
     format: options.format,
     movements: selected.map((movement) =>
-      createProgrammedMovementPrescription(movement, options.format),
+      createProgrammedMovementPrescription(
+        movement,
+        options.format,
+        options.calorieTarget,
+      ),
     ),
     timeCap: options.timeCap ?? defaults.timeCap,
     rounds: options.rounds ?? defaults.rounds,
