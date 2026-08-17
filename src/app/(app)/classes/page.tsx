@@ -5,10 +5,12 @@ import {
 } from "@/lib/data/gym-class";
 import { getGymMembers, getGymsForAthlete } from "@/lib/data/gym";
 import { MembershipRole } from "@/lib/domain/models/gym";
+import { ensureUpcomingClassSessions } from "@/lib/training/gym-class";
 import { ClassesClient } from "./classes-client";
 
 export default async function ClassesPage() {
   const athlete = await requireAthlete();
+  await ensureUpcomingClassSessions(athlete.id);
   const gyms = await getGymsForAthlete(athlete.id);
   const ownerGyms = gyms.filter(
     ({ membershipRole }) => membershipRole === MembershipRole.Owner,

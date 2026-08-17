@@ -1,4 +1,4 @@
-import { and, eq, gte } from "drizzle-orm";
+import { and, eq, gte, notInArray } from "drizzle-orm";
 import { db } from "../db";
 import { classSessions, gymClasses, memberships } from "../db/schema";
 import { MembershipRole } from "../domain/models/gym";
@@ -122,13 +122,19 @@ export async function updateClassForOwner(
   classId: string,
   ownerAthleteId: string,
   raw: unknown,
-  effectiveFrom?: string,
+  effectiveFrom: Date = new Date(),
   expandThrough?: string,
 ) {
   const input = gymClassInputSchema.parse(raw);
   const range = defaultExpansionRange(input.timeZone);
-  const scheduleStartsOn = effectiveFrom ?? range.startDate;
+  const scheduleStartsOn = localDateInTimeZone(effectiveFrom, input.timeZone);
   const scheduleEndsOn = expandThrough ?? range.endDate;
+  const expanded = expandClassSchedule(
+    input.weeklyTimes,
+    input.timeZone,
+    scheduleStartsOn,
+    scheduleEndsOn,
+  ).filter(({ startsAt }) => startsAt >= effectiveFrom);
 
   await db.transaction(async (tx) => {
     const [existing] = await tx
@@ -155,18 +161,71 @@ export async function updateClassForOwner(
         updatedAt: new Date(),
       })
       .where(eq(gymClasses.id, classId));
-    await tx
-      .delete(classSessions)
-      .where(
-        and(
-          eq(classSessions.classId, classId),
-          gte(classSessions.localDate, scheduleStartsOn),
-        ),
-      );
-    await insertExpandedSessions(tx, classId, input.weeklyTimes, input.timeZone, {
-      startDate: scheduleStartsOn,
-      endDate: scheduleEndsOn,
-    });
+    const obsolete = and(
+      eq(classSessions.classId, classId),
+      gte(classSessions.startsAt, effectiveFrom),
+      expanded.length > 0
+        ? notInArray(
+            classSessions.startsAt,
+            expanded.map(({ startsAt }) => startsAt),
+          )
+        : undefined,
+    );
+    await tx.delete(classSessions).where(obsolete);
+    if (expanded.length > 0) {
+      await tx
+        .insert(classSessions)
+        .values(
+          expanded.map(({ localDate, startsAt }) => ({
+            id: newId("class_session"),
+            classId,
+            localDate,
+            startsAt,
+          })),
+        )
+        .onConflictDoNothing();
+    }
+  });
+}
+
+export async function ensureUpcomingClassSessions(
+  athleteId: string,
+  now: Date = new Date(),
+  horizonDays = 90,
+) {
+  const classes = await db
+    .select({ class: gymClasses })
+    .from(gymClasses)
+    .innerJoin(
+      memberships,
+      and(
+        eq(memberships.gymId, gymClasses.gymId),
+        eq(memberships.athleteId, athleteId),
+      ),
+    );
+
+  await db.transaction(async (tx) => {
+    for (const row of classes) {
+      const startDate = localDateInTimeZone(now, row.class.timeZone);
+      const expanded = expandClassSchedule(
+        row.class.weeklyTimes,
+        row.class.timeZone,
+        startDate,
+        addDaysToLocalDate(startDate, horizonDays),
+      ).filter(({ startsAt }) => startsAt >= now);
+      if (expanded.length === 0) continue;
+      await tx
+        .insert(classSessions)
+        .values(
+          expanded.map(({ localDate, startsAt }) => ({
+            id: newId("class_session"),
+            classId: row.class.id,
+            localDate,
+            startsAt,
+          })),
+        )
+        .onConflictDoNothing();
+    }
   });
 }
 

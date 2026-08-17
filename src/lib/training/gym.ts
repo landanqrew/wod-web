@@ -1,6 +1,13 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "../db";
-import { athletes, gymEquipment, gyms, memberships, users } from "../db/schema";
+import {
+  athletes,
+  gymClasses,
+  gymEquipment,
+  gyms,
+  memberships,
+  users,
+} from "../db/schema";
 import { MembershipRole } from "../domain/models/gym";
 import { newId } from "../ids";
 import { gymInputSchema, membershipGrantSchema } from "../validation";
@@ -114,6 +121,18 @@ export async function grantGymMembership(
       throw new Error("The Gym owner role cannot be changed");
     }
 
+    if (existing?.role === MembershipRole.Coach && input.role !== MembershipRole.Coach) {
+      await tx
+        .update(gymClasses)
+        .set({ coachAthleteId: null, updatedAt: new Date() })
+        .where(
+          and(
+            eq(gymClasses.gymId, gymId),
+            eq(gymClasses.coachAthleteId, target.athleteId),
+          ),
+        );
+    }
+
     await tx
       .insert(memberships)
       .values({
@@ -161,6 +180,18 @@ export async function revokeGymMembership(
       .limit(1);
     if (target?.role === MembershipRole.Owner) {
       throw new Error("The Gym owner cannot be removed");
+    }
+
+    if (target?.role === MembershipRole.Coach) {
+      await tx
+        .update(gymClasses)
+        .set({ coachAthleteId: null, updatedAt: new Date() })
+        .where(
+          and(
+            eq(gymClasses.gymId, gymId),
+            eq(gymClasses.coachAthleteId, targetAthleteId),
+          ),
+        );
     }
 
     await tx

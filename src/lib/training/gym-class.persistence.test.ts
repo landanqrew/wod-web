@@ -10,6 +10,7 @@ import { newId } from "../ids";
 import {
   cancelClassSessionForOwner,
   createClassForOwner,
+  ensureUpcomingClassSessions,
   updateClassForOwner,
 } from "./gym-class";
 import {
@@ -127,7 +128,36 @@ describe("Classes and dated Class Sessions", () => {
     ]);
 
     const cancelled = original.find(({ localDate }) => localDate === "2026-03-08");
+    const futureCancelled = original.find(
+      ({ localDate }) => localDate === "2026-03-15",
+    );
     await cancelClassSessionForOwner(cancelled!.id, ownerAthleteId);
+    await cancelClassSessionForOwner(futureCancelled!.id, ownerAthleteId);
+
+    await updateClassForOwner(
+      classId,
+      ownerAthleteId,
+      {
+        name: "6am CrossFit",
+        coachAthleteId,
+        weeklyTimes: [{ dayOfWeek: 0, localTime: "06:00" }],
+        timeZone: "America/Chicago",
+        capacity: 25,
+      },
+      new Date("2026-03-08T20:00:00Z"),
+      "2026-03-15",
+    );
+    const afterSameDaySave = await getClassSessionsForGym(
+      gymId,
+      ownerAthleteId,
+      [classId],
+    );
+    expect(
+      afterSameDaySave.find(({ localDate }) => localDate === "2026-03-08"),
+    ).toMatchObject({ id: cancelled!.id, cancelled: true });
+    expect(
+      afterSameDaySave.find(({ localDate }) => localDate === "2026-03-15"),
+    ).toMatchObject({ id: futureCancelled!.id, cancelled: true });
     expect(
       (
         await getUpcomingClassSessionsForAthlete(
@@ -137,7 +167,6 @@ describe("Classes and dated Class Sessions", () => {
       ).map(({ localDate, gymName }) => ({ localDate, gymName })),
     ).toEqual([
       { localDate: "2026-03-01", gymName: "Iron Ridge" },
-      { localDate: "2026-03-15", gymName: "Iron Ridge" },
     ]);
 
     await expect(
@@ -151,7 +180,7 @@ describe("Classes and dated Class Sessions", () => {
           timeZone: "America/Chicago",
           capacity: 20,
         },
-        "2026-03-09",
+        new Date("2026-03-09T00:00:00Z"),
         "2026-03-23",
       ),
     ).rejects.toThrow("Gym not found");
@@ -166,7 +195,7 @@ describe("Classes and dated Class Sessions", () => {
         timeZone: "America/Chicago",
         capacity: 20,
       },
-      "2026-03-09",
+      new Date("2026-03-09T00:00:00Z"),
       "2026-03-23",
     );
 
@@ -181,6 +210,59 @@ describe("Classes and dated Class Sessions", () => {
       { localDate: "2026-03-09", cancelled: false },
       { localDate: "2026-03-16", cancelled: false },
       { localDate: "2026-03-23", cancelled: false },
+    ]);
+
+    await ensureUpcomingClassSessions(
+      memberAthleteId,
+      new Date("2026-03-24T00:00:00Z"),
+      21,
+    );
+    const extended = await getClassSessionsForGym(
+      gymId,
+      memberAthleteId,
+      [classId],
+    );
+    await ensureUpcomingClassSessions(
+      memberAthleteId,
+      new Date("2026-03-24T00:00:00Z"),
+      21,
+    );
+    expect(
+      (await getClassSessionsForGym(gymId, memberAthleteId, [classId])).map(
+        ({ id }) => id,
+      ),
+    ).toEqual(extended.map(({ id }) => id));
+    expect(extended.map(({ localDate }) => localDate)).toEqual(
+      expect.arrayContaining(["2026-03-30", "2026-04-06", "2026-04-13"]),
+    );
+
+    await grantGymMembership(gymId, ownerAthleteId, {
+      email: `${coachUserId}@test.local`,
+      role: MembershipRole.Member,
+    });
+    expect(await getClassesForGym(gymId, ownerAthleteId)).toEqual([
+      expect.objectContaining({ id: classId, coachAthleteId: null }),
+    ]);
+    await grantGymMembership(gymId, ownerAthleteId, {
+      email: `${coachUserId}@test.local`,
+      role: MembershipRole.Coach,
+    });
+    await updateClassForOwner(
+      classId,
+      ownerAthleteId,
+      {
+        name: "7am CrossFit",
+        coachAthleteId,
+        weeklyTimes: [{ dayOfWeek: 1, localTime: "07:00" }],
+        timeZone: "America/Chicago",
+        capacity: 20,
+      },
+      new Date("2026-04-20T00:00:00Z"),
+      "2026-04-20",
+    );
+    await revokeGymMembership(gymId, ownerAthleteId, coachAthleteId);
+    expect(await getClassesForGym(gymId, ownerAthleteId)).toEqual([
+      expect.objectContaining({ id: classId, coachAthleteId: null }),
     ]);
 
     await revokeGymMembership(gymId, ownerAthleteId, memberAthleteId);
