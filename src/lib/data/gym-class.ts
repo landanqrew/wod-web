@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq, gte, inArray, isNull } from "drizzle-orm";
+import { and, asc, count, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "../db";
 import {
@@ -8,6 +8,7 @@ import {
   gymClasses,
   gyms,
   memberships,
+  reservations,
 } from "../db/schema";
 import { GymPermission } from "../domain/models/gym";
 import type {
@@ -53,6 +54,15 @@ export async function getUpcomingClassSessionsForAthlete(
       class: gymClasses,
       gym: gyms,
       coachName: sessionCoaches.name,
+      reservationCount: sql<number>`(
+        select count(*)::int from ${reservations}
+        where ${reservations.classSessionId} = ${classSessions.id}
+      )`,
+      reserved: sql<boolean>`exists (
+        select 1 from ${reservations}
+        where ${reservations.classSessionId} = ${classSessions.id}
+          and ${reservations.athleteId} = ${athleteId}
+      )`,
     })
     .from(classSessions)
     .innerJoin(gymClasses, eq(gymClasses.id, classSessions.classId))
@@ -89,6 +99,9 @@ export async function getUpcomingClassSessionsForAthlete(
     coachName: row.coachName,
     capacity: row.class.capacity,
     cancelled: false,
+    reservationCount: row.reservationCount,
+    reserved: row.reserved,
+    workoutPosted: false,
   }));
 }
 
@@ -106,6 +119,15 @@ export async function getClassSessionsForGym(
       class: gymClasses,
       gym: gyms,
       coachName: sessionCoaches.name,
+      reservationCount: sql<number>`(
+        select count(*)::int from ${reservations}
+        where ${reservations.classSessionId} = ${classSessions.id}
+      )`,
+      reserved: sql<boolean>`exists (
+        select 1 from ${reservations}
+        where ${reservations.classSessionId} = ${classSessions.id}
+          and ${reservations.athleteId} = ${athleteId}
+      )`,
     })
     .from(classSessions)
     .innerJoin(gymClasses, eq(gymClasses.id, classSessions.classId))
@@ -134,5 +156,28 @@ export async function getClassSessionsForGym(
     coachName: row.coachName,
     capacity: row.class.capacity,
     cancelled: row.session.cancelledAt !== null,
+    reservationCount: row.reservationCount,
+    reserved: row.reserved,
+    workoutPosted: false,
   }));
+}
+
+export async function getClassSessionHeadcount(
+  classSessionId: string,
+  athleteId: string,
+): Promise<number> {
+  const [session] = await db
+    .select({ gymId: gymClasses.gymId })
+    .from(classSessions)
+    .innerJoin(gymClasses, eq(gymClasses.id, classSessions.classId))
+    .where(eq(classSessions.id, classSessionId))
+    .limit(1);
+  if (!session) throw new Error("Class Session not found");
+  await requireGymPermission(session.gymId, athleteId, GymPermission.ViewRoster);
+
+  const [headcount] = await db
+    .select({ value: count() })
+    .from(reservations)
+    .where(eq(reservations.classSessionId, classSessionId));
+  return headcount.value;
 }

@@ -50,6 +50,13 @@
       "when": 1787007067143,
       "tag": "0006_same_firebird",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1787007583624,
+      "tag": "0007_nasty_mastermind",
+      "breakpoints": true
     }
   ]
 }
