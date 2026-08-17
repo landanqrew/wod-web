@@ -131,7 +131,9 @@ export const workouts = pgTable(
     /** Benchmark grouping: girl | hero | open | custom */
     benchmarkCategory: text("benchmark_category"),
     estimatedDuration: integer("estimated_duration"),
-    createdBy: text("created_by").references(() => athletes.id, { onDelete: "cascade" }),
+    createdBy: text("created_by").references(() => athletes.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [index("workouts_created_by_idx").on(t.createdBy)]
