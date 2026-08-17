@@ -130,6 +130,7 @@ export async function reserveClassSessionForAthleteInTransaction(
 export async function cancelReservationForAthlete(
   classSessionId: string,
   athleteId: string,
+  discardAssignedWorkout = false,
 ) {
   return db.transaction(async (tx) => {
     const [reservation] = await tx
@@ -149,7 +150,16 @@ export async function cancelReservationForAthlete(
       .from(assignedWorkouts)
       .where(eq(assignedWorkouts.reservationId, reservation.id))
       .limit(1);
+    if (assigned && !discardAssignedWorkout) {
+      return {
+        cancelled: false as const,
+        requiresAssignedWorkoutConfirmation: true as const,
+      };
+    }
     await tx.delete(reservations).where(eq(reservations.id, reservation.id));
-    return { discardedAssignedWorkout: Boolean(assigned) };
+    return {
+      cancelled: true as const,
+      discardedAssignedWorkout: Boolean(assigned),
+    };
   });
 }

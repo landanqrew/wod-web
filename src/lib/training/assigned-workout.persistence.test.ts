@@ -171,7 +171,16 @@ describe("Assigned Workout materialisation", () => {
     const oldAssignedId = deferred!.id;
     await expect(
       cancelReservationForAthlete(sessions[1].id, memberAthleteId),
-    ).resolves.toEqual({ discardedAssignedWorkout: true });
+    ).resolves.toEqual({
+      cancelled: false,
+      requiresAssignedWorkoutConfirmation: true,
+    });
+    await expect(
+      getAssignedWorkoutForAthlete(sessions[1].id, memberAthleteId),
+    ).resolves.toMatchObject({ id: oldAssignedId });
+    await expect(
+      cancelReservationForAthlete(sessions[1].id, memberAthleteId, true),
+    ).resolves.toEqual({ cancelled: true, discardedAssignedWorkout: true });
     expect(
       await db
         .select()

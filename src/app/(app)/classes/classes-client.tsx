@@ -152,19 +152,29 @@ export function ClassesClient({
   }
 
   function toggleReservation(session: ClassSessionSummary) {
-    if (
-      session.reserved &&
-      assignedWorkoutsBySession[session.id] &&
-      !window.confirm(
-        "Cancelling removes your Assigned Workout and any personal edits. Continue?",
-      )
-    ) {
-      return;
-    }
     startTransition(async () => {
       try {
-        if (session.reserved) await cancelReservationAction(session.id);
-        else await reserveClassSessionAction(session.id);
+        if (session.reserved) {
+          let discardAssignedWorkout = false;
+          if (assignedWorkoutsBySession[session.id]) {
+            discardAssignedWorkout = window.confirm(
+              "Cancelling removes your Assigned Workout and any personal edits. Continue?",
+            );
+            if (!discardAssignedWorkout) return;
+          }
+          let result = await cancelReservationAction(
+            session.id,
+            discardAssignedWorkout,
+          );
+          if (!result.cancelled) {
+            discardAssignedWorkout = window.confirm(
+              "A new Assigned Workout is now attached. Cancelling removes it and any personal edits. Continue?",
+            );
+            if (!discardAssignedWorkout) return;
+            result = await cancelReservationAction(session.id, true);
+          }
+          if (!result.cancelled) throw new Error("Cancellation was not confirmed");
+        } else await reserveClassSessionAction(session.id);
         toast.success(session.reserved ? "Reservation cancelled" : "Spot reserved");
         router.refresh();
       } catch {

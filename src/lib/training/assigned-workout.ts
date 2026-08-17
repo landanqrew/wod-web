@@ -118,7 +118,13 @@ export async function materialiseAssignedWorkout(
       const adjustment = adjustmentRows.find(
         ({ movementId }) => movementId === originalMovementId,
       );
-      if (!adjustment || prescription.load === undefined) return prescription;
+      if (
+        !adjustment ||
+        prescription.load === undefined ||
+        prescription.movementId !== originalMovementId
+      ) {
+        return prescription;
+      }
       const ratio = Number(adjustment.ratio);
       if (!(ratio > 0 && ratio <= 1)) {
         throw new Error("Load Adjustment ratio must be greater than 0 and at most 1");
