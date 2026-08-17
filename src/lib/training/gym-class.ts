@@ -141,7 +141,8 @@ export async function updateClassForOwner(
       .select({ gymId: gymClasses.gymId })
       .from(gymClasses)
       .where(eq(gymClasses.id, classId))
-      .limit(1);
+      .limit(1)
+      .for("update");
     if (!existing) throw new Error("Class not found");
     await requireOwnerAndEligibleCoach(
       tx,
@@ -193,18 +194,19 @@ export async function ensureUpcomingClassSessions(
   now: Date = new Date(),
   horizonDays = 90,
 ) {
-  const classes = await db
-    .select({ class: gymClasses })
-    .from(gymClasses)
-    .innerJoin(
-      memberships,
-      and(
-        eq(memberships.gymId, gymClasses.gymId),
-        eq(memberships.athleteId, athleteId),
-      ),
-    );
-
   await db.transaction(async (tx) => {
+    const classes = await tx
+      .select({ class: gymClasses })
+      .from(gymClasses)
+      .innerJoin(
+        memberships,
+        and(
+          eq(memberships.gymId, gymClasses.gymId),
+          eq(memberships.athleteId, athleteId),
+        ),
+      )
+      .for("update", { of: gymClasses });
+
     for (const row of classes) {
       const startDate = localDateInTimeZone(now, row.class.timeZone);
       const expanded = expandClassSchedule(
