@@ -59,6 +59,7 @@ async function requireOwnerAndEligibleCoach(
 async function insertExpandedSessions(
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
   classId: string,
+  coachAthleteId: string,
   weeklyTimes: { dayOfWeek: number; localTime: string }[],
   timeZone: string,
   range: ClassExpansionRange,
@@ -74,7 +75,9 @@ async function insertExpandedSessions(
     expanded.map(({ localDate, startsAt }) => ({
       id: newId("class_session"),
       classId,
+      coachAthleteId,
       localDate,
+      timeZone,
       startsAt,
     })),
   );
@@ -109,6 +112,7 @@ export async function createClassForOwner(
     await insertExpandedSessions(
       tx,
       classId,
+      input.coachAthleteId,
       input.weeklyTimes,
       input.timeZone,
       expansionRange,
@@ -180,11 +184,19 @@ export async function updateClassForOwner(
           expanded.map(({ localDate, startsAt }) => ({
             id: newId("class_session"),
             classId,
+            coachAthleteId: input.coachAthleteId,
             localDate,
+            timeZone: input.timeZone,
             startsAt,
           })),
         )
-        .onConflictDoNothing();
+        .onConflictDoUpdate({
+          target: [classSessions.classId, classSessions.startsAt],
+          set: {
+            coachAthleteId: input.coachAthleteId,
+            timeZone: input.timeZone,
+          },
+        });
     }
   });
 }
@@ -222,7 +234,9 @@ export async function ensureUpcomingClassSessions(
           expanded.map(({ localDate, startsAt }) => ({
             id: newId("class_session"),
             classId: row.class.id,
+            coachAthleteId: row.class.coachAthleteId,
             localDate,
+            timeZone: row.class.timeZone,
             startsAt,
           })),
         )

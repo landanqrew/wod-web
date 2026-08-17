@@ -1,7 +1,8 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
   athletes,
+  classSessions,
   gymClasses,
   gymEquipment,
   gyms,
@@ -82,6 +83,7 @@ export async function grantGymMembership(
   gymId: string,
   ownerAthleteId: string,
   raw: unknown,
+  membershipChangedAt: Date = new Date(),
 ) {
   const input = membershipGrantSchema.parse(raw);
 
@@ -122,7 +124,7 @@ export async function grantGymMembership(
     }
 
     if (existing?.role === MembershipRole.Coach && input.role !== MembershipRole.Coach) {
-      await tx
+      const clearedClasses = await tx
         .update(gymClasses)
         .set({ coachAthleteId: null, updatedAt: new Date() })
         .where(
@@ -130,7 +132,22 @@ export async function grantGymMembership(
             eq(gymClasses.gymId, gymId),
             eq(gymClasses.coachAthleteId, target.athleteId),
           ),
-        );
+        )
+        .returning({ id: gymClasses.id });
+      if (clearedClasses.length > 0) {
+        await tx
+          .update(classSessions)
+          .set({ coachAthleteId: null })
+          .where(
+            and(
+              inArray(
+                classSessions.classId,
+                clearedClasses.map(({ id }) => id),
+              ),
+              gte(classSessions.startsAt, membershipChangedAt),
+            ),
+          );
+      }
     }
 
     await tx
@@ -153,6 +170,7 @@ export async function revokeGymMembership(
   gymId: string,
   ownerAthleteId: string,
   targetAthleteId: string,
+  membershipChangedAt: Date = new Date(),
 ) {
   await db.transaction(async (tx) => {
     const [owner] = await tx
@@ -183,7 +201,7 @@ export async function revokeGymMembership(
     }
 
     if (target?.role === MembershipRole.Coach) {
-      await tx
+      const clearedClasses = await tx
         .update(gymClasses)
         .set({ coachAthleteId: null, updatedAt: new Date() })
         .where(
@@ -191,7 +209,22 @@ export async function revokeGymMembership(
             eq(gymClasses.gymId, gymId),
             eq(gymClasses.coachAthleteId, targetAthleteId),
           ),
-        );
+        )
+        .returning({ id: gymClasses.id });
+      if (clearedClasses.length > 0) {
+        await tx
+          .update(classSessions)
+          .set({ coachAthleteId: null })
+          .where(
+            and(
+              inArray(
+                classSessions.classId,
+                clearedClasses.map(({ id }) => id),
+              ),
+              gte(classSessions.startsAt, membershipChangedAt),
+            ),
+          );
+      }
     }
 
     await tx

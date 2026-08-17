@@ -206,7 +206,11 @@ export const classSessions = pgTable(
     classId: text("class_id")
       .notNull()
       .references(() => gymClasses.id, { onDelete: "cascade" }),
+    coachAthleteId: text("coach_athlete_id").references(() => athletes.id, {
+      onDelete: "set null",
+    }),
     localDate: text("local_date").notNull(),
+    timeZone: text("time_zone").notNull(),
     startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     createdAt: timestamp("created_at").notNull().defaultNow(),

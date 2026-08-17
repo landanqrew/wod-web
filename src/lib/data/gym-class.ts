@@ -1,5 +1,6 @@
 import "server-only";
 import { and, asc, eq, gte, inArray, isNull } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db } from "../db";
 import {
   athletes,
@@ -15,6 +16,8 @@ import type {
 } from "../domain/models/gym-class";
 import type { WeeklyClassTime } from "../domain/scheduling/expand-class-schedule";
 import { requireGymPermission } from "./gym";
+
+const sessionCoaches = alias(athletes, "session_coaches");
 
 export async function getClassesForGym(
   gymId: string,
@@ -49,7 +52,7 @@ export async function getUpcomingClassSessionsForAthlete(
       session: classSessions,
       class: gymClasses,
       gym: gyms,
-      coachName: athletes.name,
+      coachName: sessionCoaches.name,
     })
     .from(classSessions)
     .innerJoin(gymClasses, eq(gymClasses.id, classSessions.classId))
@@ -61,7 +64,10 @@ export async function getUpcomingClassSessionsForAthlete(
         eq(memberships.athleteId, athleteId),
       ),
     )
-    .leftJoin(athletes, eq(athletes.id, gymClasses.coachAthleteId))
+    .leftJoin(
+      sessionCoaches,
+      eq(sessionCoaches.id, classSessions.coachAthleteId),
+    )
     .where(
       and(
         gte(classSessions.startsAt, from),
@@ -79,7 +85,7 @@ export async function getUpcomingClassSessionsForAthlete(
     gymName: row.gym.name,
     startsAt: row.session.startsAt,
     localDate: row.session.localDate,
-    timeZone: row.class.timeZone,
+    timeZone: row.session.timeZone,
     coachName: row.coachName,
     capacity: row.class.capacity,
     cancelled: false,
@@ -99,12 +105,15 @@ export async function getClassSessionsForGym(
       session: classSessions,
       class: gymClasses,
       gym: gyms,
-      coachName: athletes.name,
+      coachName: sessionCoaches.name,
     })
     .from(classSessions)
     .innerJoin(gymClasses, eq(gymClasses.id, classSessions.classId))
     .innerJoin(gyms, eq(gyms.id, gymClasses.gymId))
-    .leftJoin(athletes, eq(athletes.id, gymClasses.coachAthleteId))
+    .leftJoin(
+      sessionCoaches,
+      eq(sessionCoaches.id, classSessions.coachAthleteId),
+    )
     .where(
       and(
         eq(gyms.id, gymId),
@@ -121,7 +130,7 @@ export async function getClassSessionsForGym(
     gymName: row.gym.name,
     startsAt: row.session.startsAt,
     localDate: row.session.localDate,
-    timeZone: row.class.timeZone,
+    timeZone: row.session.timeZone,
     coachName: row.coachName,
     capacity: row.class.capacity,
     cancelled: row.session.cancelledAt !== null,
