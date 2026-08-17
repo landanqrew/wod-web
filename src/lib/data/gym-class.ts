@@ -8,6 +8,7 @@ import {
   gymClasses,
   gyms,
   memberships,
+  programmedWorkouts,
   reservations,
 } from "../db/schema";
 import { GymPermission } from "../domain/models/gym";
@@ -63,6 +64,10 @@ export async function getUpcomingClassSessionsForAthlete(
         where ${reservations.classSessionId} = ${classSessions.id}
           and ${reservations.athleteId} = ${athleteId}
       )`,
+      workoutPosted: sql<boolean>`exists (
+        select 1 from ${programmedWorkouts}
+        where ${programmedWorkouts.classSessionId} = ${classSessions.id}
+      )`,
     })
     .from(classSessions)
     .innerJoin(gymClasses, eq(gymClasses.id, classSessions.classId))
@@ -101,7 +106,7 @@ export async function getUpcomingClassSessionsForAthlete(
     cancelled: false,
     reservationCount: row.reservationCount,
     reserved: row.reserved,
-    workoutPosted: false,
+    workoutPosted: row.workoutPosted,
   }));
 }
 
@@ -127,6 +132,10 @@ export async function getClassSessionsForGym(
         select 1 from ${reservations}
         where ${reservations.classSessionId} = ${classSessions.id}
           and ${reservations.athleteId} = ${athleteId}
+      )`,
+      workoutPosted: sql<boolean>`exists (
+        select 1 from ${programmedWorkouts}
+        where ${programmedWorkouts.classSessionId} = ${classSessions.id}
       )`,
     })
     .from(classSessions)
@@ -158,7 +167,7 @@ export async function getClassSessionsForGym(
     cancelled: row.session.cancelledAt !== null,
     reservationCount: row.reservationCount,
     reserved: row.reserved,
-    workoutPosted: false,
+    workoutPosted: row.workoutPosted,
   }));
 }
 

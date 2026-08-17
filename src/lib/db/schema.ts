@@ -10,7 +10,11 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import type { MovementPrescription, SessionBlock } from "@/lib/domain/models/workout";
+import type {
+  MovementPrescription,
+  SessionBlock,
+  Workout,
+} from "@/lib/domain/models/workout";
 import type { MovementResult } from "@/lib/domain/models/workout-result";
 import type { MovementConstraint } from "@/lib/domain/models/impediment";
 import type { WeeklyClassTime } from "@/lib/domain/scheduling/expand-class-schedule";
@@ -218,6 +222,30 @@ export const classSessions = pgTable(
   (t) => [
     uniqueIndex("class_sessions_class_starts_idx").on(t.classId, t.startsAt),
     index("class_sessions_starts_idx").on(t.startsAt),
+  ],
+);
+
+export const programmedWorkouts = pgTable(
+  "programmed_workouts",
+  {
+    id: text("id").primaryKey(),
+    classSessionId: text("class_session_id")
+      .notNull()
+      .references(() => classSessions.id, { onDelete: "cascade" }),
+    workout: jsonb("workout").$type<Workout>().notNull(),
+    sourceWorkoutId: text("source_workout_id").references(() => workouts.id, {
+      onDelete: "set null",
+    }),
+    programmedByAthleteId: text("programmed_by_athlete_id").references(
+      () => athletes.id,
+      { onDelete: "set null" },
+    ),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("programmed_workouts_session_idx").on(t.classSessionId),
+    index("programmed_workouts_source_idx").on(t.sourceWorkoutId),
   ],
 );
 

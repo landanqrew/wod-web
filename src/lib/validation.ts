@@ -39,16 +39,99 @@ export const workoutSchema = z.object({
   estimatedDuration: z.number().int().positive().max(300).optional(),
 });
 
-export const generateOptionsSchema = z.object({
-  format: enumOf(WorkoutFormat),
-  movementCount: z.number().int().min(1).max(10).optional(),
-  modalities: z.array(enumOf(Modality)).optional(),
-  movementPatterns: z.array(enumOf(MovementPattern)).optional(),
-  timeCap: z.number().int().min(1).max(120).optional(),
-  rounds: z.number().int().min(1).max(50).optional(),
-  emomMinutes: z.number().int().min(1).max(90).optional(),
-  excludeMovements: z.array(z.string()).optional(),
+const programmedPrescriptionSchema = prescriptionSchema.extend({
+  rxLoad: z
+    .object({
+      male: z.number().nonnegative().max(2000),
+      female: z.number().nonnegative().max(2000),
+    })
+    .optional(),
 });
+
+const programmedFormatFields: Record<
+  WorkoutFormat,
+  Array<"timeCap" | "rounds" | "workInterval" | "restInterval" | "emomMinutes">
+> = {
+  [WorkoutFormat.AMRAP]: ["timeCap"],
+  [WorkoutFormat.EMOM]: ["emomMinutes", "rounds", "workInterval"],
+  [WorkoutFormat.ForTime]: ["timeCap"],
+  [WorkoutFormat.RoundsForTime]: ["rounds", "timeCap"],
+  [WorkoutFormat.Tabata]: ["rounds", "workInterval", "restInterval"],
+  [WorkoutFormat.Interval]: ["rounds", "workInterval", "restInterval"],
+  [WorkoutFormat.Strength]: ["rounds"],
+  [WorkoutFormat.Chipper]: ["timeCap"],
+  [WorkoutFormat.Ladder]: ["timeCap"],
+};
+
+export const programmedWorkoutSchema = workoutSchema
+  .extend({
+    movements: z.array(programmedPrescriptionSchema).min(1).max(20),
+  })
+  .superRefine((workout, context) => {
+    const required: Partial<
+      Record<WorkoutFormat, Array<keyof typeof workout>>
+    > = {
+      [WorkoutFormat.AMRAP]: ["timeCap"],
+      [WorkoutFormat.EMOM]: ["emomMinutes"],
+      [WorkoutFormat.RoundsForTime]: ["rounds"],
+      [WorkoutFormat.Tabata]: ["workInterval", "restInterval"],
+      [WorkoutFormat.Interval]: ["workInterval", "restInterval"],
+    };
+    for (const field of required[workout.format as WorkoutFormat] ?? []) {
+      if (workout[field] === undefined) {
+        context.addIssue({
+          code: "custom",
+          path: [field],
+          message: `${String(field)} is required for ${workout.format}`,
+        });
+      }
+    }
+
+    const allowed = new Set(
+      programmedFormatFields[workout.format as WorkoutFormat] ?? [],
+    );
+    for (const field of [
+      "timeCap",
+      "rounds",
+      "workInterval",
+      "restInterval",
+      "emomMinutes",
+    ] as const) {
+      if (!allowed.has(field) && workout[field] !== undefined) {
+        context.addIssue({
+          code: "custom",
+          path: [field],
+          message: `${field} does not apply to ${workout.format}`,
+        });
+      }
+    }
+  });
+
+export const generateOptionsSchema = z
+  .object({
+    format: enumOf(WorkoutFormat),
+    movementCount: z.number().int().min(1).max(10).optional(),
+    modalities: z.array(enumOf(Modality)).optional(),
+    movementPatterns: z.array(enumOf(MovementPattern)).optional(),
+    timeCap: z.number().int().min(1).max(120).optional(),
+    rounds: z.number().int().min(1).max(50).optional(),
+    emomMinutes: z.number().int().min(1).max(90).optional(),
+    excludeMovements: z.array(z.string()).optional(),
+  })
+  .superRefine((options, context) => {
+    const allowed = new Set(
+      programmedFormatFields[options.format as WorkoutFormat] ?? [],
+    );
+    for (const field of ["timeCap", "rounds", "emomMinutes"] as const) {
+      if (!allowed.has(field) && options[field] !== undefined) {
+        context.addIssue({
+          code: "custom",
+          path: [field],
+          message: `${field} does not apply to ${options.format}`,
+        });
+      }
+    }
+  });
 
 export const movementResultSchema = z.object({
   movementId: z.string().min(1),

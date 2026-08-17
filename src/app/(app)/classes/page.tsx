@@ -4,6 +4,7 @@ import {
   getUpcomingClassSessionsForAthlete,
 } from "@/lib/data/gym-class";
 import { getGymMembers, getGymsForAthlete } from "@/lib/data/gym";
+import { getProgrammedWorkoutForSession } from "@/lib/data/programmed-workout";
 import { MembershipRole } from "@/lib/domain/models/gym";
 import { ensureUpcomingClassSessions } from "@/lib/training/gym-class";
 import { ClassesClient } from "./classes-client";
@@ -28,11 +29,28 @@ export default async function ClassesPage() {
       })),
     ),
   ]);
+  const programmedWorkouts = await Promise.all(
+    upcomingSessions
+      .filter(({ workoutPosted, reserved, gymId }) => {
+        const role = gyms.find((gym) => gym.id === gymId)?.membershipRole;
+        return (
+          workoutPosted &&
+          (reserved ||
+            role === MembershipRole.Owner ||
+            role === MembershipRole.Coach)
+        );
+      })
+      .map(async (session) => [
+        session.id,
+        (await getProgrammedWorkoutForSession(session.id, athlete.id))?.workout,
+      ] as const),
+  );
 
   return (
     <ClassesClient
       gyms={gyms}
       upcomingSessions={upcomingSessions}
+      programmedWorkoutsBySession={Object.fromEntries(programmedWorkouts)}
       classesByGym={Object.fromEntries(
         ownerData.map(({ gymId, classes }) => [gymId, classes]),
       )}

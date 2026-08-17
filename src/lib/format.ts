@@ -80,7 +80,11 @@ export function prescriptionLine(p: MovementPrescription): string {
   if (p.distance !== undefined) bits.push(`${p.distance} m`);
   if (p.duration !== undefined) bits.push(`${p.duration}s`);
   const prefix = bits.length ? `${bits.join(" / ")} ` : "";
-  const load = p.load ? ` @ ${p.load} lb` : "";
+  const load = p.rxLoad
+    ? ` @ ${p.rxLoad.male}/${p.rxLoad.female} lb`
+    : p.load !== undefined
+      ? ` @ ${p.load} lb`
+      : "";
   return `${prefix}${name}${load}`;
 }
 

@@ -57,6 +57,13 @@
       "when": 1787007583624,
       "tag": "0007_nasty_mastermind",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1787008968907,
+      "tag": "0008_aromatic_khan",
+      "breakpoints": true
     }
   ]
 }

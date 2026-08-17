@@ -39,6 +39,8 @@ const FORMAT_DEFAULTS: Record<
     timeCap?: number;
     rounds?: number;
     emomMinutes?: number;
+    workInterval?: number;
+    restInterval?: number;
   }
 > = {
   [WorkoutFormat.AMRAP]: { movementCount: 3, timeCap: 12 },
@@ -49,12 +51,37 @@ const FORMAT_DEFAULTS: Record<
     rounds: 5,
     timeCap: 20,
   },
-  [WorkoutFormat.Tabata]: { movementCount: 4 },
-  [WorkoutFormat.Interval]: { movementCount: 2 },
+  [WorkoutFormat.Tabata]: {
+    movementCount: 4,
+    rounds: 8,
+    workInterval: 20,
+    restInterval: 10,
+  },
+  [WorkoutFormat.Interval]: {
+    movementCount: 2,
+    rounds: 5,
+    workInterval: 60,
+    restInterval: 60,
+  },
   [WorkoutFormat.Strength]: { movementCount: 1 },
   [WorkoutFormat.Chipper]: { movementCount: 6, timeCap: 25 },
   [WorkoutFormat.Ladder]: { movementCount: 2, timeCap: 15 },
 };
+
+const TIME_CAP_FORMATS = new Set<WorkoutFormat>([
+  WorkoutFormat.AMRAP,
+  WorkoutFormat.ForTime,
+  WorkoutFormat.RoundsForTime,
+  WorkoutFormat.Chipper,
+  WorkoutFormat.Ladder,
+]);
+const ROUND_FORMATS = new Set<WorkoutFormat>([
+  WorkoutFormat.EMOM,
+  WorkoutFormat.RoundsForTime,
+  WorkoutFormat.Tabata,
+  WorkoutFormat.Interval,
+  WorkoutFormat.Strength,
+]);
 
 /** Produce a Workout for a floor without using any Athlete data. */
 export function programWorkout(
@@ -105,6 +132,18 @@ export function programWorkout(
   }
 
   const selected = selectDiverseMovements(available, movementCount);
+  const timeCap = TIME_CAP_FORMATS.has(options.format)
+    ? options.timeCap ?? defaults.timeCap
+    : undefined;
+  const rounds = ROUND_FORMATS.has(options.format)
+    ? options.rounds ?? defaults.rounds
+    : undefined;
+  const emomMinutes =
+    options.format === WorkoutFormat.EMOM
+      ? options.emomMinutes ?? defaults.emomMinutes
+      : undefined;
+  const workInterval = defaults.workInterval;
+  const restInterval = defaults.restInterval;
 
   return {
     id: generateId(),
@@ -117,12 +156,20 @@ export function programWorkout(
         options.calorieTarget,
       ),
     ),
-    timeCap: options.timeCap ?? defaults.timeCap,
-    rounds: options.rounds ?? defaults.rounds,
-    emomMinutes: options.emomMinutes ?? defaults.emomMinutes,
+    timeCap,
+    rounds,
+    emomMinutes,
+    workInterval,
+    restInterval,
     scoreType: getScoreType(options.format),
     isBenchmark: false,
-    estimatedDuration: estimateDuration(options),
+    estimatedDuration: estimateDuration({
+      timeCap,
+      emomMinutes,
+      rounds,
+      workInterval,
+      restInterval,
+    }),
   };
 }
 
@@ -186,11 +233,20 @@ function formatWorkoutName(format: WorkoutFormat, movements: Movement[]): string
   return `${format.toUpperCase()}: ${movementNames.join(", ")}${suffix}`;
 }
 
-function estimateDuration(options: ProgramOptions): number {
-  const defaults = FORMAT_DEFAULTS[options.format];
-  if (options.timeCap) return options.timeCap;
-  if (options.emomMinutes) return options.emomMinutes;
-  if (defaults.timeCap) return defaults.timeCap;
-  if (defaults.emomMinutes) return defaults.emomMinutes;
+function estimateDuration(timing: {
+  timeCap?: number;
+  emomMinutes?: number;
+  rounds?: number;
+  workInterval?: number;
+  restInterval?: number;
+}): number {
+  if (timing.timeCap) return timing.timeCap;
+  if (timing.emomMinutes) return timing.emomMinutes;
+  if (timing.rounds && timing.workInterval !== undefined) {
+    return Math.ceil(
+      (timing.rounds * (timing.workInterval + (timing.restInterval ?? 0))) /
+        60,
+    );
+  }
   return 15;
 }

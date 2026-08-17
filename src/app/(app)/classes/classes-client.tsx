@@ -5,7 +5,13 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, EmptyState, PageHeader } from "@/components/ui/card";
-import { ChipToggle, FieldRow, Input, Select } from "@/components/ui/field";
+import {
+  ChipToggle,
+  FieldRow,
+  Input,
+  Select,
+  Textarea,
+} from "@/components/ui/field";
 import {
   cancelClassSessionAction,
   createClassAction,
@@ -15,9 +21,25 @@ import {
   cancelReservationAction,
   reserveClassSessionAction,
 } from "@/lib/actions/reservation";
+import {
+  generateGymDayAction,
+  programGymDayAction,
+  updateSessionProgrammedWorkoutAction,
+} from "@/lib/actions/programmed-workout";
 import { MembershipRole, type Gym, type GymMember } from "@/lib/domain/models/gym";
 import type { ClassSessionSummary, GymClass } from "@/lib/domain/models/gym-class";
+import {
+  ScoreType,
+  WorkoutFormat,
+  type MovementPrescription,
+  type Workout,
+} from "@/lib/domain/models/workout";
+import {
+  changeProgrammedWorkoutFormat,
+  createManualProgrammedWorkout,
+} from "@/lib/domain/programming/manual-workout";
 import type { WeeklyClassTime } from "@/lib/domain/scheduling/expand-class-schedule";
+import { formatLabel, prescriptionLine } from "@/lib/format";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -31,14 +53,31 @@ type Draft = {
   capacity: number;
 };
 
+type ProgrammingDraft = {
+  gymId: string;
+  sessionId?: string;
+  localDate: string;
+  workout: Workout;
+  movementsJson: string;
+};
+
+type ProgrammingNumberField =
+  | "timeCap"
+  | "rounds"
+  | "workInterval"
+  | "restInterval"
+  | "emomMinutes";
+
 export function ClassesClient({
   gyms,
   upcomingSessions,
+  programmedWorkoutsBySession,
   classesByGym,
   coachesByGym,
 }: {
   gyms: Gym[];
   upcomingSessions: ClassSessionSummary[];
+  programmedWorkoutsBySession: Record<string, Workout | undefined>;
   classesByGym: Record<string, GymClass[]>;
   coachesByGym: Record<string, GymMember[]>;
 }) {
@@ -48,6 +87,9 @@ export function ClassesClient({
   );
   const [selectedGymId, setSelectedGymId] = React.useState(gyms[0]?.id ?? "");
   const [draft, setDraft] = React.useState<Draft | null>(null);
+  const [programmingDraft, setProgrammingDraft] =
+    React.useState<ProgrammingDraft | null>(null);
+  const [programmingDate, setProgrammingDate] = React.useState("");
   const [pending, startTransition] = React.useTransition();
   const selectedGym = gyms.find(({ id }) => id === selectedGymId) ?? gyms[0];
 
@@ -119,6 +161,95 @@ export function ClassesClient({
     });
   }
 
+  function beginManualProgramming(localDate: string) {
+    if (!selectedGym) return;
+    const workout = createManualProgrammedWorkout();
+    setProgrammingDraft({
+      gymId: selectedGym.id,
+      localDate,
+      workout,
+      movementsJson: JSON.stringify(workout.movements, null, 2),
+    });
+  }
+
+  function beginProgrammedWorkoutEdit(session: ClassSessionSummary) {
+    const workout = programmedWorkoutsBySession[session.id];
+    if (!workout) return;
+    setProgrammingDraft({
+      gymId: session.gymId,
+      sessionId: session.id,
+      localDate: session.localDate,
+      workout,
+      movementsJson: JSON.stringify(
+        workout.movements.map(({ movement: _movement, ...prescription }) =>
+          prescription,
+        ),
+        null,
+        2,
+      ),
+    });
+  }
+
+  function saveProgrammedWorkout() {
+    if (!programmingDraft) return;
+    startTransition(async () => {
+      try {
+        const movements = JSON.parse(
+          programmingDraft.movementsJson,
+        ) as MovementPrescription[];
+        const workout = { ...programmingDraft.workout, movements };
+        if (programmingDraft.sessionId) {
+          await updateSessionProgrammedWorkoutAction(
+            programmingDraft.sessionId,
+            workout,
+          );
+        } else {
+          await programGymDayAction(
+            programmingDraft.gymId,
+            programmingDraft.localDate,
+            workout,
+          );
+        }
+        toast.success(
+          programmingDraft.sessionId
+            ? "Class Session workout updated"
+            : "Workout programmed for the gym-day",
+        );
+        setProgrammingDraft(null);
+        router.refresh();
+      } catch {
+        toast.error("Could not save that Programmed Workout. Check the prescription.");
+      }
+    });
+  }
+
+  function updateProgrammingNumber(
+    field: ProgrammingNumberField,
+    value: number,
+  ) {
+    if (!programmingDraft) return;
+    setProgrammingDraft({
+      ...programmingDraft,
+      workout: { ...programmingDraft.workout, [field]: value },
+    });
+  }
+
+  function generateGymDay(localDate: string) {
+    if (!selectedGym) return;
+    startTransition(async () => {
+      try {
+        await generateGymDayAction(selectedGym.id, localDate, {
+          format: WorkoutFormat.AMRAP,
+          movementCount: 3,
+        });
+        toast.success("Gym-floor workout programmed for the day");
+        router.refresh();
+      } catch {
+        toast.error("Could not generate a Programmed Workout for that day.");
+      }
+    });
+  }
+
   function toggleDay(dayOfWeek: number) {
     if (!draft) return;
     const existing = draft.weeklyTimes.some((time) => time.dayOfWeek === dayOfWeek);
@@ -134,6 +265,13 @@ export function ClassesClient({
   const selectedSessions = selectedGym
     ? upcomingSessions.filter(({ gymId }) => gymId === selectedGym.id)
     : [];
+  const selectedDates = [...new Set(selectedSessions.map(({ localDate }) => localDate))];
+  const effectiveProgrammingDate = selectedDates.includes(programmingDate)
+    ? programmingDate
+    : selectedDates[0] ?? "";
+  const canProgram =
+    selectedGym?.membershipRole === MembershipRole.Owner ||
+    selectedGym?.membershipRole === MembershipRole.Coach;
 
   return (
     <>
@@ -261,6 +399,203 @@ export function ClassesClient({
         </Card>
       ) : null}
 
+      {canProgram && effectiveProgrammingDate ? (
+        <Card className="mb-4 flex flex-col gap-3 p-5">
+          <div>
+            <h2 className="text-lg font-bold">Programme a gym-day</h2>
+            <p className="text-xs text-subtle">
+              One save publishes an independent copy to every Class Session that day.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-end gap-3">
+            <FieldRow label="Class date" className="min-w-44">
+              <Select
+                value={effectiveProgrammingDate}
+                onChange={(event) => setProgrammingDate(event.target.value)}
+              >
+                {selectedDates.map((localDate) => (
+                  <option key={localDate} value={localDate}>{localDate}</option>
+                ))}
+              </Select>
+            </FieldRow>
+            <Button
+              variant="primary"
+              disabled={pending}
+              onClick={() => generateGymDay(effectiveProgrammingDate)}
+            >
+              Generate from floor
+            </Button>
+            <Button
+              disabled={pending}
+              onClick={() => beginManualProgramming(effectiveProgrammingDate)}
+            >
+              Write by hand
+            </Button>
+          </div>
+        </Card>
+      ) : null}
+
+      {programmingDraft ? (
+        <Card className="mb-4 flex flex-col gap-4 p-5">
+          <div>
+            <h2 className="text-lg font-bold">
+              {programmingDraft.sessionId
+                ? "Edit this Class Session"
+                : `Write ${programmingDraft.localDate} by hand`}
+            </h2>
+            <p className="text-xs text-subtle">
+              Weighted movements use <code>rxLoad</code> with male and female values.
+            </p>
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            <FieldRow label="Workout name">
+              <Input
+                value={programmingDraft.workout.name}
+                onChange={(event) =>
+                  setProgrammingDraft({
+                    ...programmingDraft,
+                    workout: {
+                      ...programmingDraft.workout,
+                      name: event.target.value,
+                    },
+                  })
+                }
+              />
+            </FieldRow>
+            <FieldRow label="Format">
+              <Select
+                value={programmingDraft.workout.format}
+                onChange={(event) =>
+                  setProgrammingDraft({
+                    ...programmingDraft,
+                    workout: changeProgrammedWorkoutFormat(
+                      programmingDraft.workout,
+                      event.target.value as WorkoutFormat,
+                    ),
+                  })
+                }
+              >
+                {Object.values(WorkoutFormat).map((format) => (
+                  <option key={format} value={format}>{formatLabel(format)}</option>
+                ))}
+              </Select>
+            </FieldRow>
+            <FieldRow label="Score type">
+              <Select
+                value={programmingDraft.workout.scoreType}
+                onChange={(event) =>
+                  setProgrammingDraft({
+                    ...programmingDraft,
+                    workout: {
+                      ...programmingDraft.workout,
+                      scoreType: event.target.value as ScoreType,
+                    },
+                  })
+                }
+              >
+                {Object.values(ScoreType).map((scoreType) => (
+                  <option key={scoreType} value={scoreType}>{formatLabel(scoreType)}</option>
+                ))}
+              </Select>
+            </FieldRow>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            {programmingDraft.workout.timeCap !== undefined ? (
+              <FieldRow label="Time cap (minutes)">
+                <Input
+                  type="number"
+                  min={1}
+                  value={programmingDraft.workout.timeCap}
+                  onChange={(event) =>
+                    updateProgrammingNumber("timeCap", Number(event.target.value))
+                  }
+                />
+              </FieldRow>
+            ) : null}
+            {programmingDraft.workout.rounds !== undefined ? (
+              <FieldRow label="Rounds / sets">
+                <Input
+                  type="number"
+                  min={1}
+                  value={programmingDraft.workout.rounds}
+                  onChange={(event) =>
+                    updateProgrammingNumber("rounds", Number(event.target.value))
+                  }
+                />
+              </FieldRow>
+            ) : null}
+            {programmingDraft.workout.emomMinutes !== undefined ? (
+              <FieldRow label="EMOM minutes">
+                <Input
+                  type="number"
+                  min={1}
+                  value={programmingDraft.workout.emomMinutes}
+                  onChange={(event) =>
+                    updateProgrammingNumber(
+                      "emomMinutes",
+                      Number(event.target.value),
+                    )
+                  }
+                />
+              </FieldRow>
+            ) : null}
+            {programmingDraft.workout.workInterval !== undefined ? (
+              <FieldRow label="Work seconds">
+                <Input
+                  type="number"
+                  min={1}
+                  value={programmingDraft.workout.workInterval}
+                  onChange={(event) =>
+                    updateProgrammingNumber(
+                      "workInterval",
+                      Number(event.target.value),
+                    )
+                  }
+                />
+              </FieldRow>
+            ) : null}
+            {programmingDraft.workout.restInterval !== undefined ? (
+              <FieldRow label="Rest seconds">
+                <Input
+                  type="number"
+                  min={0}
+                  value={programmingDraft.workout.restInterval}
+                  onChange={(event) =>
+                    updateProgrammingNumber(
+                      "restInterval",
+                      Number(event.target.value),
+                    )
+                  }
+                />
+              </FieldRow>
+            ) : null}
+          </div>
+          <FieldRow
+            label="Movement prescriptions (JSON)"
+            hint='Example: [{"movementId":"thruster","reps":15,"rxLoad":{"male":95,"female":65}}]'
+          >
+            <Textarea
+              className="min-h-40 font-mono text-sm"
+              value={programmingDraft.movementsJson}
+              onChange={(event) =>
+                setProgrammingDraft({
+                  ...programmingDraft,
+                  movementsJson: event.target.value,
+                })
+              }
+            />
+          </FieldRow>
+          <div className="flex gap-2">
+            <Button variant="primary" disabled={pending} onClick={saveProgrammedWorkout}>
+              {programmingDraft.sessionId ? "Save this Session" : "Publish gym-day"}
+            </Button>
+            <Button disabled={pending} onClick={() => setProgrammingDraft(null)}>
+              Cancel
+            </Button>
+          </div>
+        </Card>
+      ) : null}
+
       {selectedGym?.membershipRole === MembershipRole.Owner && selectedClasses.length > 0 ? (
         <Card className="mb-4 flex flex-col gap-3 p-5">
           <h2 className="text-lg font-bold">Class definitions</h2>
@@ -307,6 +642,18 @@ export function ClassesClient({
               <p className="text-xs text-subtle">
                 Coach {session.coachName ?? "TBD"} · capacity {session.capacity}
               </p>
+              {programmedWorkoutsBySession[session.id] ? (
+                <div className="rounded-xl border border-border bg-app p-3">
+                  <p className="text-sm font-semibold">
+                    {programmedWorkoutsBySession[session.id]?.name}
+                  </p>
+                  <p className="mt-1 text-xs text-subtle">
+                    {programmedWorkoutsBySession[session.id]?.movements
+                      .map(prescriptionLine)
+                      .join(" · ")}
+                  </p>
+                </div>
+              ) : null}
               <p className="text-xs text-subtle">
                 {session.workoutPosted ? "Workout posted" : "Workout not posted yet"}
                 {selectedGym?.membershipRole !== MembershipRole.Member
@@ -336,6 +683,15 @@ export function ClassesClient({
                   onClick={() => cancelSession(session.id)}
                 >
                   Cancel Session
+                </Button>
+              ) : null}
+              {canProgram && programmedWorkoutsBySession[session.id] ? (
+                <Button
+                  size="sm"
+                  disabled={pending}
+                  onClick={() => beginProgrammedWorkoutEdit(session)}
+                >
+                  Edit this Session workout
                 </Button>
               ) : null}
             </Card>

@@ -110,4 +110,45 @@ describe("programWorkout", () => {
       random.mockRestore();
     }
   });
+
+  it("emits coherent timing fields for interval formats", () => {
+    const context: ProgrammingContext = {
+      floor: { availableEquipment: EQUIPMENT_PRESETS.bodyweight },
+      avoidedMuscles: new Set(),
+    };
+
+    expect(programWorkout(context, { format: WorkoutFormat.Tabata })).toMatchObject({
+      rounds: 8,
+      workInterval: 20,
+      restInterval: 10,
+    });
+    expect(programWorkout(context, { format: WorkoutFormat.Interval })).toMatchObject({
+      rounds: 5,
+      workInterval: 60,
+      restInterval: 60,
+    });
+    expect(
+      programWorkout(context, {
+        format: WorkoutFormat.AMRAP,
+        rounds: 5,
+        emomMinutes: 12,
+      }),
+    ).toMatchObject({
+      timeCap: 12,
+      rounds: undefined,
+      emomMinutes: undefined,
+      estimatedDuration: 12,
+    });
+    expect(
+      programWorkout(context, {
+        format: WorkoutFormat.EMOM,
+        timeCap: 99,
+        emomMinutes: 12,
+      }),
+    ).toMatchObject({
+      timeCap: undefined,
+      emomMinutes: 12,
+      estimatedDuration: 12,
+    });
+  });
 });
