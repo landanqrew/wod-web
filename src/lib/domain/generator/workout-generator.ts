@@ -6,6 +6,7 @@ import { Modality, MovementPattern } from "../models/body";
 import { Sex } from "../models/athlete";
 import { getAllMovements } from "../movements/library";
 import { mergeConstraints, filterAllowedMovements } from "../scaling/index";
+import { personaliseWorkout } from "../personalisation/personalise-workout";
 
 /**
  * Options for generating a workout.
@@ -232,15 +233,6 @@ export function generateWorkout(
     prescribeMovement(m, options.format, athlete.sex)
   );
 
-  // Apply load scaling from constraints
-  if (constraints?.maxLoadPercent !== undefined) {
-    for (const p of prescriptions) {
-      if (p.load !== undefined) {
-        p.load = Math.round(p.load * (constraints.maxLoadPercent / 100));
-      }
-    }
-  }
-
   const workout: Workout = {
     id: generateId(),
     name: formatWorkoutName(options.format, selected),
@@ -254,7 +246,7 @@ export function generateWorkout(
     estimatedDuration: estimateDuration(options),
   };
 
-  return workout;
+  return personaliseWorkout(workout, athlete).workout;
 }
 
 /**

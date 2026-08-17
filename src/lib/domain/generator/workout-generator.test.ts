@@ -1,10 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { generateWorkout } from "./workout-generator";
 import { createAthlete, Sex } from "../models/athlete";
 import { Equipment, EQUIPMENT_PRESETS } from "../models/equipment";
 import { WorkoutFormat, ScoreType } from "../models/workout";
-import { Modality } from "../models/body";
+import { Joint, Modality } from "../models/body";
 import {
+  buildInjuryConstraints,
   buildPregnancyConstraints,
   ImpedimentCategory,
   ImpedimentSeverity,
@@ -137,6 +138,58 @@ describe("generateWorkout", () => {
         // Load should be scaled to 70% of Rx
         expect(p.load).toBeLessThanOrEqual(p.movement.defaultLoadFemale);
       }
+    }
+  });
+
+  it("preserves solo generation with limited equipment and an Impediment", () => {
+    const random = vi.spyOn(Math, "random").mockReturnValue(0);
+    const now = vi.spyOn(Date, "now").mockReturnValue(123);
+
+    try {
+      const athlete = createAthlete("test", "Test", Sex.Male, [
+        ...EQUIPMENT_PRESETS.minimal,
+      ]);
+      const constraints = buildInjuryConstraints(
+        { muscles: [], joints: [Joint.Knees] },
+        ImpedimentSeverity.Moderate,
+      );
+      athlete.impediments = [
+        {
+          id: "knee-injury",
+          category: ImpedimentCategory.AcuteInjury,
+          severity: ImpedimentSeverity.Moderate,
+          affectedMuscles: [],
+          affectedJoints: [Joint.Knees],
+          description: "Knee injury",
+          startDate: "2026-08-17",
+          constraints,
+        },
+      ];
+
+      const workout = generateWorkout(athlete, {
+        format: WorkoutFormat.AMRAP,
+        movementCount: 2,
+      });
+
+      expect({
+        id: workout.id,
+        name: workout.name,
+        movements: workout.movements.map(({ movementId, reps, load }) => ({
+          movementId,
+          reps,
+          load,
+        })),
+      }).toEqual({
+        id: "wod_123_",
+        name: "AMRAP: Dumbbell Press, Push-Up",
+        movements: [
+          { movementId: "dumbbell_press", reps: 10, load: 25 },
+          { movementId: "push_up", reps: 15, load: undefined },
+        ],
+      });
+    } finally {
+      random.mockRestore();
+      now.mockRestore();
     }
   });
 
