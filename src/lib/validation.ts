@@ -39,6 +39,19 @@ export const workoutSchema = z.object({
   estimatedDuration: z.number().int().positive().max(300).optional(),
 });
 
+const programmedPrescriptionSchema = prescriptionSchema.extend({
+  rxLoad: z
+    .object({
+      male: z.number().nonnegative().max(2000),
+      female: z.number().nonnegative().max(2000),
+    })
+    .optional(),
+});
+
+export const programmedWorkoutSchema = workoutSchema.extend({
+  movements: z.array(programmedPrescriptionSchema).min(1).max(20),
+});
+
 export const generateOptionsSchema = z.object({
   format: enumOf(WorkoutFormat),
   movementCount: z.number().int().min(1).max(10).optional(),
