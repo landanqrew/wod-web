@@ -140,18 +140,30 @@ export const workouts = pgTable(
   (t) => [index("workouts_created_by_idx").on(t.createdBy)]
 );
 
-export const gyms = pgTable(
-  "gyms",
+export const gyms = pgTable("gyms", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const memberships = pgTable(
+  "memberships",
   {
-    id: text("id").primaryKey(),
-    name: text("name").notNull(),
-    ownerAthleteId: text("owner_athlete_id").references(() => athletes.id, {
-      onDelete: "set null",
-    }),
+    gymId: text("gym_id")
+      .notNull()
+      .references(() => gyms.id, { onDelete: "cascade" }),
+    athleteId: text("athlete_id")
+      .notNull()
+      .references(() => athletes.id, { onDelete: "cascade" }),
+    role: text("role").notNull(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
-  (t) => [index("gyms_owner_athlete_idx").on(t.ownerAthleteId)],
+  (t) => [
+    primaryKey({ columns: [t.gymId, t.athleteId] }),
+    index("memberships_athlete_idx").on(t.athleteId),
+  ],
 );
 
 export const gymEquipment = pgTable(

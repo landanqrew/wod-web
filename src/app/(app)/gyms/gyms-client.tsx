@@ -5,10 +5,20 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Card, EmptyState, PageHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ChipToggle, FieldRow, Input } from "@/components/ui/field";
-import { createGymAction, updateGymAction } from "@/lib/actions/gym";
+import { ChipToggle, FieldRow, Input, Select } from "@/components/ui/field";
+import {
+  createGymAction,
+  grantGymMembershipAction,
+  revokeGymMembershipAction,
+  updateGymAction,
+} from "@/lib/actions/gym";
 import { Equipment } from "@/lib/domain/models/equipment";
-import type { Gym, GymFloorEntry } from "@/lib/domain/models/gym";
+import {
+  MembershipRole,
+  type Gym,
+  type GymFloorEntry,
+  type GymMember,
+} from "@/lib/domain/models/gym";
 import { titleCase } from "@/lib/format";
 
 const EQUIPMENT = Object.values(Equipment).filter(
@@ -17,10 +27,22 @@ const EQUIPMENT = Object.values(Equipment).filter(
 
 type Draft = { id?: string; name: string; floor: GymFloorEntry[] };
 
-export function GymsClient({ gyms }: { gyms: Gym[] }) {
+export function GymsClient({
+  gyms,
+  memberships,
+}: {
+  gyms: Gym[];
+  memberships: Record<string, GymMember[]>;
+}) {
   const router = useRouter();
   const [draft, setDraft] = React.useState<Draft | null>(null);
+  const [selectedGymId, setSelectedGymId] = React.useState(gyms[0]?.id);
+  const [memberEmail, setMemberEmail] = React.useState("");
+  const [memberRole, setMemberRole] = React.useState<MembershipRole>(
+    MembershipRole.Coach,
+  );
   const [pending, startTransition] = React.useTransition();
+  const selectedGym = gyms.find(({ id }) => id === selectedGymId) ?? gyms[0];
 
   function edit(gym?: Gym) {
     setDraft(
@@ -72,11 +94,45 @@ export function GymsClient({ gyms }: { gyms: Gym[] }) {
     });
   }
 
+  function grantMembership() {
+    if (!selectedGym) return;
+    startTransition(async () => {
+      try {
+        await grantGymMembershipAction(selectedGym.id, {
+          email: memberEmail,
+          role: memberRole,
+        });
+        toast.success("Membership granted");
+        setMemberEmail("");
+        router.refresh();
+      } catch {
+        toast.error("Could not find that Athlete or grant the Membership.");
+      }
+    });
+  }
+
+  function revokeMembership(athleteId: string) {
+    if (!selectedGym) return;
+    startTransition(async () => {
+      try {
+        await revokeGymMembershipAction(selectedGym.id, athleteId);
+        toast.success("Membership revoked");
+        router.refresh();
+      } catch {
+        toast.error("Could not revoke that Membership.");
+      }
+    });
+  }
+
   return (
     <>
       <PageHeader
         title="Gyms"
-        subtitle="Declare the equipment available on each Gym floor."
+        subtitle={
+          selectedGym
+            ? `Viewing ${selectedGym.name} as ${titleCase(selectedGym.membershipRole)}`
+            : "Declare the equipment available on each Gym floor."
+        }
         action={<Button onClick={() => edit()}>Create Gym</Button>}
       />
 
@@ -143,11 +199,17 @@ export function GymsClient({ gyms }: { gyms: Gym[] }) {
       ) : (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {gyms.map((gym) => (
-            <Card key={gym.id} className="flex flex-col gap-3 p-5">
+            <Card
+              key={gym.id}
+              className={`flex flex-col gap-3 p-5 ${
+                gym.id === selectedGym?.id ? "border-primary/50" : ""
+              }`}
+            >
               <div>
                 <h2 className="text-lg font-bold">{gym.name}</h2>
                 <p className="text-xs text-subtle">
-                  {gym.floor.length} equipment type{gym.floor.length === 1 ? "" : "s"}
+                  {titleCase(gym.membershipRole)} · {gym.floor.length} equipment
+                  type{gym.floor.length === 1 ? "" : "s"}
                 </p>
               </div>
               <div className="flex flex-wrap gap-1.5">
@@ -161,13 +223,86 @@ export function GymsClient({ gyms }: { gyms: Gym[] }) {
                   </span>
                 ))}
               </div>
-              <Button size="sm" onClick={() => edit(gym)}>
-                Edit floor
-              </Button>
+              <div className="flex gap-2">
+                <Button size="sm" onClick={() => setSelectedGymId(gym.id)}>
+                  {gym.id === selectedGym?.id ? "Viewing" : "View Gym"}
+                </Button>
+                {gym.membershipRole === MembershipRole.Owner ? (
+                  <Button size="sm" onClick={() => edit(gym)}>
+                    Edit floor
+                  </Button>
+                ) : null}
+              </div>
             </Card>
           ))}
         </div>
       )}
+
+      {selectedGym && selectedGym.membershipRole !== MembershipRole.Member ? (
+        <Card className="mt-4 flex flex-col gap-4 p-5">
+          <div>
+            <h2 className="text-lg font-bold">Members</h2>
+            <p className="text-xs text-subtle">
+              Grant an existing Athlete access by account email.
+            </p>
+          </div>
+          {selectedGym.membershipRole === MembershipRole.Owner ? (
+            <div className="grid gap-3 md:grid-cols-[1fr_10rem_auto] md:items-end">
+              <FieldRow label="Account email">
+                <Input
+                  type="email"
+                  value={memberEmail}
+                  onChange={(event) => setMemberEmail(event.target.value)}
+                />
+              </FieldRow>
+              <FieldRow label="Role">
+                <Select
+                  value={memberRole}
+                  onChange={(event) =>
+                    setMemberRole(event.target.value as MembershipRole)
+                  }
+                >
+                  <option value={MembershipRole.Coach}>Coach</option>
+                  <option value={MembershipRole.Member}>Member</option>
+                </Select>
+              </FieldRow>
+              <Button
+                variant="primary"
+                disabled={pending || memberEmail.trim().length === 0}
+                onClick={grantMembership}
+              >
+                Grant Membership
+              </Button>
+            </div>
+          ) : null}
+          <div className="flex flex-col gap-2">
+            {(memberships[selectedGym.id] ?? []).map((member) => (
+              <div
+                key={member.athleteId}
+                className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2"
+              >
+                <div>
+                  <p className="text-sm font-semibold">{member.name}</p>
+                  <p className="text-xs text-subtle">
+                    {member.email} · {titleCase(member.role)}
+                  </p>
+                </div>
+                {selectedGym.membershipRole === MembershipRole.Owner &&
+                member.role !== MembershipRole.Owner ? (
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    disabled={pending}
+                    onClick={() => revokeMembership(member.athleteId)}
+                  >
+                    Revoke
+                  </Button>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : null}
     </>
   );
 }

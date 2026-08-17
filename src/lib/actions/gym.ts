@@ -2,7 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { requireAthlete } from "../data/athlete";
-import { createGymForOwner, updateGymForOwner } from "../training/gym";
+import {
+  createGymForOwner,
+  grantGymMembership,
+  revokeGymMembership,
+  updateGymForOwner,
+} from "../training/gym";
 
 export async function createGymAction(raw: unknown) {
   const athlete = await requireAthlete();
@@ -14,5 +19,20 @@ export async function createGymAction(raw: unknown) {
 export async function updateGymAction(gymId: string, raw: unknown) {
   const athlete = await requireAthlete();
   await updateGymForOwner(gymId, athlete.id, raw);
+  revalidatePath("/gyms");
+}
+
+export async function grantGymMembershipAction(gymId: string, raw: unknown) {
+  const athlete = await requireAthlete();
+  await grantGymMembership(gymId, athlete.id, raw);
+  revalidatePath("/gyms");
+}
+
+export async function revokeGymMembershipAction(
+  gymId: string,
+  targetAthleteId: string,
+) {
+  const athlete = await requireAthlete();
+  await revokeGymMembership(gymId, athlete.id, targetAthleteId);
   revalidatePath("/gyms");
 }

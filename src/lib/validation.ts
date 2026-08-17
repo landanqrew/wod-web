@@ -4,6 +4,7 @@ import { Sex } from "@/lib/domain/models/athlete";
 import { Equipment } from "@/lib/domain/models/equipment";
 import { Joint, Modality, MovementPattern, Muscle } from "@/lib/domain/models/body";
 import { DifficultyTier } from "@/lib/domain/models/movement";
+import { MembershipRole } from "@/lib/domain/models/gym";
 import {
   ImpedimentCategory,
   ImpedimentSeverity,
@@ -118,6 +119,11 @@ export const gymInputSchema = z.object({
     ),
 });
 
+export const membershipGrantSchema = z.object({
+  email: z.string().trim().toLowerCase().email(),
+  role: z.enum([MembershipRole.Coach, MembershipRole.Member]),
+});
+
 export const sessionBlockSchema = z.object({
   type: enumOf(SessionBlockType),
   durationMinutes: z.number().int().positive().max(180),
@@ -137,3 +143,4 @@ export type OnboardingInput = z.infer<typeof onboardingSchema>;
 export type GenerateOptionsInput = z.infer<typeof generateOptionsSchema>;
 export type SaveSessionInput = z.infer<typeof saveSessionSchema>;
 export type GymInput = z.infer<typeof gymInputSchema>;
+export type MembershipGrantInput = z.infer<typeof membershipGrantSchema>;
