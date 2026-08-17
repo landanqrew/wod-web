@@ -141,6 +141,15 @@ describe("Gym floor persistence", () => {
         GymPermission.Program,
       ),
     ).resolves.toBe(MembershipRole.Coach);
+    await expect(
+      grantGymMembership(gymId, outsiderAthleteId, {
+        email: `${userId}@test.local`,
+        role: MembershipRole.Member,
+      }),
+    ).rejects.toThrow("Gym not found");
+    await expect(
+      revokeGymMembership(gymId, outsiderAthleteId, athleteId),
+    ).rejects.toThrow("Gym not found");
     expect(await getGymMembers(gymId, athleteId)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -183,6 +192,15 @@ describe("Gym floor persistence", () => {
     await expect(getGymMembers(gymId, outsiderAthleteId)).rejects.toThrow(
       "Gym not found",
     );
+    await expect(
+      grantGymMembership(gymId, outsiderAthleteId, {
+        email: `${userId}@test.local`,
+        role: MembershipRole.Coach,
+      }),
+    ).rejects.toThrow("Gym not found");
+    await expect(
+      revokeGymMembership(gymId, outsiderAthleteId, athleteId),
+    ).rejects.toThrow("Gym not found");
 
     await updateGymForOwner(gymId, athleteId, {
       name: "Iron Ridge CrossFit",
