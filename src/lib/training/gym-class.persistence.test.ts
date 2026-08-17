@@ -220,6 +220,50 @@ describe("Classes and dated Class Sessions", () => {
       coachName: "Coach",
     });
 
+    const collisionClassId = await createClassForOwner(
+      gymId,
+      ownerAthleteId,
+      {
+        name: "Timezone collision",
+        coachAthleteId,
+        weeklyTimes: [{ dayOfWeek: 1, localTime: "01:30" }],
+        timeZone: "America/Chicago",
+        capacity: 10,
+      },
+      { startDate: "2026-03-09", endDate: "2026-03-09" },
+    );
+    const [collisionBefore] = await getClassSessionsForGym(
+      gymId,
+      ownerAthleteId,
+      [collisionClassId],
+    );
+    await updateClassForOwner(
+      collisionClassId,
+      ownerAthleteId,
+      {
+        name: "Timezone collision",
+        coachAthleteId,
+        weeklyTimes: [{ dayOfWeek: 0, localTime: "20:30" }],
+        timeZone: "Pacific/Honolulu",
+        capacity: 10,
+      },
+      new Date("2026-03-08T00:00:00Z"),
+      "2026-03-08",
+    );
+    expect(
+      await getClassSessionsForGym(
+        gymId,
+        ownerAthleteId,
+        [collisionClassId],
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        id: collisionBefore.id,
+        localDate: "2026-03-08",
+        timeZone: "Pacific/Honolulu",
+      }),
+    ]);
+
     await ensureUpcomingClassSessions(
       memberAthleteId,
       new Date("2026-03-24T00:00:00Z"),
@@ -248,9 +292,11 @@ describe("Classes and dated Class Sessions", () => {
       email: `${coachUserId}@test.local`,
       role: MembershipRole.Member,
     }, new Date("2026-03-24T00:00:00Z"));
-    expect(await getClassesForGym(gymId, ownerAthleteId)).toEqual([
-      expect.objectContaining({ id: classId, coachAthleteId: null }),
-    ]);
+    expect(await getClassesForGym(gymId, ownerAthleteId)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: classId, coachAthleteId: null }),
+      ]),
+    );
     const afterDowngrade = await getClassSessionsForGym(
       gymId,
       ownerAthleteId,
@@ -285,9 +331,11 @@ describe("Classes and dated Class Sessions", () => {
       coachAthleteId,
       new Date("2026-04-20T00:00:00Z"),
     );
-    expect(await getClassesForGym(gymId, ownerAthleteId)).toEqual([
-      expect.objectContaining({ id: classId, coachAthleteId: null }),
-    ]);
+    expect(await getClassesForGym(gymId, ownerAthleteId)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: classId, coachAthleteId: null }),
+      ]),
+    );
 
     await revokeGymMembership(gymId, ownerAthleteId, memberAthleteId);
     await expect(

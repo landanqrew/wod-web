@@ -1,4 +1,4 @@
-import { and, eq, gte, notInArray } from "drizzle-orm";
+import { and, eq, gte, notInArray, sql } from "drizzle-orm";
 import { db } from "../db";
 import { classSessions, gymClasses, memberships } from "../db/schema";
 import { MembershipRole } from "../domain/models/gym";
@@ -194,6 +194,7 @@ export async function updateClassForOwner(
           target: [classSessions.classId, classSessions.startsAt],
           set: {
             coachAthleteId: input.coachAthleteId,
+            localDate: sql`excluded.local_date`,
             timeZone: input.timeZone,
           },
         });
