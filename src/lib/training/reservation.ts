@@ -2,11 +2,14 @@ import { and, count, eq, gt } from "drizzle-orm";
 import { db } from "../db";
 import {
   classSessions,
+  assignedWorkouts,
   gymClasses,
   memberships,
+  programmedWorkouts,
   reservations,
 } from "../db/schema";
 import { newId } from "../ids";
+import { materialiseAssignedWorkout } from "./assigned-workout";
 
 type ReservationTransaction = Parameters<
   Parameters<typeof db.transaction>[0]
@@ -64,9 +67,10 @@ export async function reserveClassSessionForAthleteInTransaction(
   if (!membership) throw new Error("Class Session not found");
 
   const [session] = await tx
-    .select({
-      capacity: gymClasses.capacity,
-      cancelledAt: classSessions.cancelledAt,
+      .select({
+        capacity: gymClasses.capacity,
+        cancelledAt: classSessions.cancelledAt,
+        localDate: classSessions.localDate,
     })
     .from(classSessions)
     .innerJoin(gymClasses, eq(gymClasses.id, classSessions.classId))
@@ -106,6 +110,20 @@ export async function reserveClassSessionForAthleteInTransaction(
     classSessionId,
     athleteId,
   });
+  const [programmed] = await tx
+    .select({ workout: programmedWorkouts.workout })
+    .from(programmedWorkouts)
+    .where(eq(programmedWorkouts.classSessionId, classSessionId))
+    .limit(1);
+  if (programmed) {
+    await materialiseAssignedWorkout(tx, {
+      reservationId,
+      athleteId,
+      gymId: candidate.gymId,
+      localDate: session.localDate,
+      programmedWorkout: programmed.workout,
+    });
+  }
   return reservationId;
 }
 
@@ -113,14 +131,25 @@ export async function cancelReservationForAthlete(
   classSessionId: string,
   athleteId: string,
 ) {
-  const [cancelled] = await db
-    .delete(reservations)
-    .where(
-      and(
-        eq(reservations.classSessionId, classSessionId),
-        eq(reservations.athleteId, athleteId),
-      ),
-    )
-    .returning({ id: reservations.id });
-  if (!cancelled) throw new Error("Reservation not found");
+  return db.transaction(async (tx) => {
+    const [reservation] = await tx
+      .select({ id: reservations.id })
+      .from(reservations)
+      .where(
+        and(
+          eq(reservations.classSessionId, classSessionId),
+          eq(reservations.athleteId, athleteId),
+        ),
+      )
+      .limit(1)
+      .for("update");
+    if (!reservation) throw new Error("Reservation not found");
+    const [assigned] = await tx
+      .select({ id: assignedWorkouts.id })
+      .from(assignedWorkouts)
+      .where(eq(assignedWorkouts.reservationId, reservation.id))
+      .limit(1);
+    await tx.delete(reservations).where(eq(reservations.id, reservation.id));
+    return { discardedAssignedWorkout: Boolean(assigned) };
+  });
 }

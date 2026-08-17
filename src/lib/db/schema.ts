@@ -1,5 +1,6 @@
 import {
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -10,6 +11,7 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import type {
   MovementPrescription,
   SessionBlock,
@@ -18,6 +20,10 @@ import type {
 import type { MovementResult } from "@/lib/domain/models/workout-result";
 import type { MovementConstraint } from "@/lib/domain/models/impediment";
 import type { WeeklyClassTime } from "@/lib/domain/scheduling/expand-class-schedule";
+import type {
+  AssignedMovementProvenance,
+} from "@/lib/domain/models/assigned-workout";
+import type { PersonalisationChange } from "@/lib/domain/personalisation";
 
 /* ── auth (better-auth) ─────────────────────────────────────────────── */
 
@@ -267,6 +273,48 @@ export const reservations = pgTable(
       t.athleteId,
     ),
     index("reservations_athlete_idx").on(t.athleteId),
+  ],
+);
+
+export const assignedWorkouts = pgTable(
+  "assigned_workouts",
+  {
+    id: text("id").primaryKey(),
+    reservationId: text("reservation_id")
+      .notNull()
+      .references(() => reservations.id, { onDelete: "cascade" }),
+    workout: jsonb("workout").$type<Workout>().notNull(),
+    provenance: jsonb("provenance")
+      .$type<AssignedMovementProvenance[]>()
+      .notNull(),
+    changes: jsonb("changes").$type<PersonalisationChange[]>().notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("assigned_workouts_reservation_idx").on(t.reservationId)],
+);
+
+export const loadAdjustments = pgTable(
+  "load_adjustments",
+  {
+    id: text("id").primaryKey(),
+    athleteId: text("athlete_id")
+      .notNull()
+      .references(() => athletes.id, { onDelete: "cascade" }),
+    movementId: text("movement_id").notNull(),
+    ratio: numeric("ratio", { precision: 5, scale: 4 }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("load_adjustments_active_movement_idx")
+      .on(t.athleteId, t.movementId)
+      .where(sql`${t.revokedAt} is null`),
+    index("load_adjustments_athlete_idx").on(t.athleteId),
+    check(
+      "load_adjustments_ratio_check",
+      sql`${t.ratio} > 0 and ${t.ratio} <= 1`,
+    ),
   ],
 );
 

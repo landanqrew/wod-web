@@ -6,6 +6,7 @@ import {
   gymEquipment,
   memberships,
   programmedWorkouts,
+  reservations,
   workouts,
 } from "../db/schema";
 import { GymPermission } from "../domain/models/gym";
@@ -18,6 +19,7 @@ import type { Workout } from "../domain/models/workout";
 import { newId } from "../ids";
 import { programmedWorkoutSchema } from "../validation";
 import { requireGymPermission } from "../data/gym";
+import { materialiseAssignedWorkout } from "./assigned-workout";
 
 function parseProgrammedWorkout(raw: unknown): Workout {
   const parsed = programmedWorkoutSchema.parse(raw);
@@ -87,7 +89,7 @@ export async function programGymDay(
     const workout = parseProgrammedWorkout(rawWorkout);
     await assertSourceWorkoutExists(tx, sourceWorkoutId);
     const sessions = await tx
-      .select({ id: classSessions.id })
+      .select({ id: classSessions.id, localDate: classSessions.localDate })
       .from(classSessions)
       .innerJoin(gymClasses, eq(gymClasses.id, classSessions.classId))
       .where(
@@ -123,6 +125,19 @@ export async function programGymDay(
         })
         .returning({ id: programmedWorkouts.id });
       ids.push(stored.id);
+      const sessionReservations = await tx
+        .select({ id: reservations.id, athleteId: reservations.athleteId })
+        .from(reservations)
+        .where(eq(reservations.classSessionId, session.id));
+      for (const reservation of sessionReservations) {
+        await materialiseAssignedWorkout(tx, {
+          reservationId: reservation.id,
+          athleteId: reservation.athleteId,
+          gymId,
+          localDate: session.localDate,
+          programmedWorkout: workout,
+        });
+      }
     }
     return ids;
   });
