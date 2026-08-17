@@ -11,6 +11,10 @@ import {
   createClassAction,
   updateClassAction,
 } from "@/lib/actions/gym-class";
+import {
+  cancelReservationAction,
+  reserveClassSessionAction,
+} from "@/lib/actions/reservation";
 import { MembershipRole, type Gym, type GymMember } from "@/lib/domain/models/gym";
 import type { ClassSessionSummary, GymClass } from "@/lib/domain/models/gym-class";
 import type { WeeklyClassTime } from "@/lib/domain/scheduling/expand-class-schedule";
@@ -98,6 +102,19 @@ export function ClassesClient({
         router.refresh();
       } catch {
         toast.error("Could not cancel that Class Session.");
+      }
+    });
+  }
+
+  function toggleReservation(session: ClassSessionSummary) {
+    startTransition(async () => {
+      try {
+        if (session.reserved) await cancelReservationAction(session.id);
+        else await reserveClassSessionAction(session.id);
+        toast.success(session.reserved ? "Reservation cancelled" : "Spot reserved");
+        router.refresh();
+      } catch {
+        toast.error("Could not update that Reservation. The Class may be full.");
       }
     });
   }
@@ -290,6 +307,27 @@ export function ClassesClient({
               <p className="text-xs text-subtle">
                 Coach {session.coachName ?? "TBD"} · capacity {session.capacity}
               </p>
+              <p className="text-xs text-subtle">
+                {session.workoutPosted ? "Workout posted" : "Workout not posted yet"}
+                {selectedGym?.membershipRole !== MembershipRole.Member
+                  ? ` · ${session.reservationCount} reserved`
+                  : ""}
+              </p>
+              <Button
+                size="sm"
+                variant={session.reserved ? "danger" : "primary"}
+                disabled={
+                  pending ||
+                  (!session.reserved && session.reservationCount >= session.capacity)
+                }
+                onClick={() => toggleReservation(session)}
+              >
+                {session.reserved
+                  ? "Cancel Reservation"
+                  : session.reservationCount >= session.capacity
+                    ? "Class full"
+                    : "Reserve spot"}
+              </Button>
               {selectedGym?.membershipRole === MembershipRole.Owner ? (
                 <Button
                   size="sm"
