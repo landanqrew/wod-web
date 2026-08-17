@@ -1,223 +1,58 @@
-import type { Movement } from "../models/movement";
-import type { Athlete } from "../models/athlete";
-import type { Workout } from "../models/workout";
-import { WorkoutFormat, ScoreType } from "../models/workout";
-import { Modality, MovementPattern } from "../models/body";
-import { getAllMovements } from "../movements/library";
-import { mergeConstraints, filterAllowedMovements } from "../scaling/index";
-import { personaliseWorkout } from "../personalisation/personalise-workout";
-import { createMovementPrescription } from "../personalisation/prescription";
+import { Sex, type Athlete } from "../models/athlete";
+import { WorkoutFormat, type Workout } from "../models/workout";
+import { getAllMovements } from "../movements";
+import { personaliseWorkout } from "../personalisation";
+import {
+  programWorkout,
+  type ProgramOptions,
+} from "../programming";
+import { filterAllowedMovements, mergeConstraints } from "../scaling";
 
-/**
- * Options for generating a workout.
- */
-export interface GenerateOptions {
-  /** Desired workout format */
-  format: WorkoutFormat;
-  /** Number of distinct movements to include */
-  movementCount?: number;
-  /** Target modalities to include (empty = any) */
-  modalities?: Modality[];
-  /** Target Movement Patterns to bias toward (empty = balanced) */
-  movementPatterns?: MovementPattern[];
-  /** Time cap in minutes (for AMRAP, ForTime) */
-  timeCap?: number;
-  /** Number of rounds (for EMOM, RoundsForTime) */
-  rounds?: number;
-  /** EMOM duration in minutes */
-  emomMinutes?: number;
-  /** Movements to exclude by ID */
-  excludeMovements?: string[];
-}
+/** Backwards-compatible options for solo workout generation. */
+export type GenerateOptions = ProgramOptions;
 
-const FORMAT_DEFAULTS: Record<
-  WorkoutFormat,
-  { movementCount: number; timeCap?: number; rounds?: number; emomMinutes?: number }
-> = {
-  [WorkoutFormat.AMRAP]: { movementCount: 3, timeCap: 12 },
-  [WorkoutFormat.EMOM]: { movementCount: 3, emomMinutes: 12 },
-  [WorkoutFormat.ForTime]: { movementCount: 3, timeCap: 15 },
-  [WorkoutFormat.RoundsForTime]: { movementCount: 3, rounds: 5, timeCap: 20 },
-  [WorkoutFormat.Tabata]: { movementCount: 4 },
-  [WorkoutFormat.Interval]: { movementCount: 2 },
-  [WorkoutFormat.Strength]: { movementCount: 1 },
-  [WorkoutFormat.Chipper]: { movementCount: 6, timeCap: 25 },
-  [WorkoutFormat.Ladder]: { movementCount: 2, timeCap: 15 },
-};
-
-/**
- * Pick N random items from an array (Fisher-Yates partial shuffle).
- */
-function pickRandom<T>(arr: T[], n: number): T[] {
-  const copy = [...arr];
-  const result: T[] = [];
-  for (let i = 0; i < n && copy.length > 0; i++) {
-    const idx = Math.floor(Math.random() * copy.length);
-    result.push(copy[idx]);
-    copy.splice(idx, 1);
-  }
-  return result;
-}
-
-/**
- * Get the score type for a workout format.
- */
-function getScoreType(format: WorkoutFormat): ScoreType {
-  switch (format) {
-    case WorkoutFormat.AMRAP:
-      return ScoreType.RoundsAndReps;
-    case WorkoutFormat.ForTime:
-    case WorkoutFormat.RoundsForTime:
-    case WorkoutFormat.Chipper:
-      return ScoreType.Time;
-    case WorkoutFormat.Strength:
-      return ScoreType.Load;
-    case WorkoutFormat.Tabata:
-      return ScoreType.Reps;
-    case WorkoutFormat.EMOM:
-    case WorkoutFormat.Interval:
-    case WorkoutFormat.Ladder:
-      return ScoreType.None;
-    default:
-      return ScoreType.None;
-  }
-}
-
-/**
- * Generate a workout for an athlete.
- *
- * The generator:
- * 1. Filters the movement library by athlete equipment + impediments
- * 2. Applies modality / Movement Pattern preferences
- * 3. Picks movements to create variety
- * 4. Assigns reps/loads/distances based on format and athlete sex
- */
+/** Run athlete-independent Programming followed by Personalisation. */
 export function generateWorkout(
   athlete: Athlete,
-  options: GenerateOptions
+  options: GenerateOptions,
 ): Workout {
-  const defaults = FORMAT_DEFAULTS[options.format];
-  const movementCount = options.movementCount ?? defaults.movementCount;
+  // Preserve the legacy solo selector's candidate pool. Programming itself stays
+  // athlete-independent; the compatibility facade passes only Movement IDs.
+  const legacyAllowedIds = new Set(
+    filterAllowedMovements(
+      getAllMovements(),
+      mergeConstraints(athlete.impediments),
+      athlete.equipment,
+    ).map(({ id }) => id),
+  );
+  const excludedMovements = new Set(options.excludeMovements ?? []);
+  for (const movement of getAllMovements()) {
+    if (!legacyAllowedIds.has(movement.id)) excludedMovements.add(movement.id);
+  }
 
-  // Get all movements, filtered by athlete constraints
-  const constraints = mergeConstraints(athlete.impediments);
-  let available = filterAllowedMovements(
-    getAllMovements(),
-    constraints,
-    athlete.equipment
+  const programmedWorkout = programWorkout(
+    {
+      floor: { availableEquipment: athlete.equipment },
+      avoidedMuscles: new Set(),
+    },
+    {
+      ...options,
+      calorieTarget: getSoloCalorieTarget(options.format, athlete.sex),
+      excludeMovements: [...excludedMovements],
+    },
   );
 
-  // Exclude specific movements if requested
-  if (options.excludeMovements?.length) {
-    const excluded = new Set(options.excludeMovements);
-    available = available.filter((m) => !excluded.has(m.id));
-  }
-
-  // Filter by modality preference
-  if (options.modalities?.length) {
-    const modalitySet = new Set(options.modalities);
-    const filtered = available.filter((m) => modalitySet.has(m.modality));
-    if (filtered.length >= movementCount) {
-      available = filtered;
-    }
-    // If not enough movements in preferred modalities, use full pool
-  }
-
-  // Bias toward requested Movement Patterns
-  if (options.movementPatterns?.length) {
-    const groupSet = new Set(options.movementPatterns);
-    const preferred = available.filter((m) =>
-      m.movementPatterns.some((g) => groupSet.has(g))
-    );
-    if (preferred.length >= movementCount) {
-      available = preferred;
-    }
-  }
-
-  // Pick movements, trying for modality diversity
-  const selected = selectDiverseMovements(available, movementCount);
-
-  // Build prescriptions
-  const prescriptions = selected.map((m) =>
-    createMovementPrescription(m, options.format, athlete.sex)
-  );
-
-  const workout: Workout = {
-    id: generateId(),
-    name: formatWorkoutName(options.format, selected),
-    format: options.format,
-    movements: prescriptions,
-    timeCap: options.timeCap ?? defaults.timeCap,
-    rounds: options.rounds ?? defaults.rounds,
-    emomMinutes: options.emomMinutes ?? defaults.emomMinutes,
-    scoreType: getScoreType(options.format),
-    isBenchmark: false,
-    estimatedDuration: estimateDuration(options),
-  };
-
-  return personaliseWorkout(workout, athlete).workout;
+  return personaliseWorkout(programmedWorkout, athlete).workout;
 }
 
-/**
- * Select movements with modality diversity.
- * Tries to avoid picking all movements from the same modality.
- */
-function selectDiverseMovements(
-  pool: Movement[],
-  count: number
-): Movement[] {
-  if (pool.length <= count) return [...pool];
-
-  // Group by modality
-  const byModality = new Map<Modality, Movement[]>();
-  for (const m of pool) {
-    const group = byModality.get(m.modality) ?? [];
-    group.push(m);
-    byModality.set(m.modality, group);
+function getSoloCalorieTarget(format: WorkoutFormat, sex: Sex): number {
+  const base = sex === Sex.Male ? 15 : 12;
+  switch (format) {
+    case WorkoutFormat.EMOM:
+      return Math.round(base * 0.7);
+    case WorkoutFormat.Chipper:
+      return base * 2;
+    default:
+      return base;
   }
-
-  const modalities = [...byModality.keys()];
-  const selected: Movement[] = [];
-  const usedIds = new Set<string>();
-
-  // Round-robin through modalities
-  let modalityIdx = 0;
-  while (selected.length < count) {
-    const modality = modalities[modalityIdx % modalities.length];
-    const candidates = (byModality.get(modality) ?? []).filter(
-      (m) => !usedIds.has(m.id)
-    );
-
-    if (candidates.length > 0) {
-      const pick = candidates[Math.floor(Math.random() * candidates.length)];
-      selected.push(pick);
-      usedIds.add(pick.id);
-    }
-
-    modalityIdx++;
-
-    // Safety: if we've gone through all modalities without finding new movements
-    if (modalityIdx > count * modalities.length) break;
-  }
-
-  return selected;
-}
-
-function generateId(): string {
-  return `wod_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function formatWorkoutName(format: WorkoutFormat, movements: Movement[]): string {
-  const movementNames = movements.slice(0, 3).map((m) => m.name);
-  const suffix = movements.length > 3 ? " + more" : "";
-  return `${format.toUpperCase()}: ${movementNames.join(", ")}${suffix}`;
-}
-
-function estimateDuration(options: GenerateOptions): number {
-  const defaults = FORMAT_DEFAULTS[options.format];
-  if (options.timeCap) return options.timeCap;
-  if (options.emomMinutes) return options.emomMinutes;
-  if (defaults.timeCap) return defaults.timeCap;
-  if (defaults.emomMinutes) return defaults.emomMinutes;
-  return 15; // default fallback
 }

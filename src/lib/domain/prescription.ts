@@ -1,12 +1,12 @@
-import { Sex } from "../models/athlete";
-import { Modality } from "../models/body";
-import type { Movement } from "../models/movement";
+import { Sex } from "./models/athlete";
+import { Modality } from "./models/body";
+import type { Movement } from "./models/movement";
 import {
   WorkoutFormat,
   type MovementPrescription,
-} from "../models/workout";
+} from "./models/workout";
 
-/** Build a coherent default prescription for a Movement and Workout format. */
+/** Build a coherent athlete-specific prescription for a Movement and format. */
 export function createMovementPrescription(
   movement: Movement,
   format: WorkoutFormat,
@@ -39,6 +39,59 @@ export function createMovementPrescription(
   }
 
   return prescription;
+}
+
+/** Build an athlete-independent prescription for a Programmed Workout. */
+export function createProgrammedMovementPrescription(
+  movement: Movement,
+  format: WorkoutFormat,
+  calorieTarget?: number,
+): MovementPrescription {
+  const prescription: MovementPrescription = {
+    movementId: movement.id,
+    movement,
+  };
+
+  switch (movement.loadType) {
+    case "bodyweight":
+      prescription.reps = getDefaultReps(format, movement);
+      break;
+    case "weighted":
+      prescription.reps = getDefaultReps(format, movement);
+      if (
+        movement.defaultLoadMale !== undefined &&
+        movement.defaultLoadFemale !== undefined
+      ) {
+        prescription.rxLoad = {
+          male: movement.defaultLoadMale,
+          female: movement.defaultLoadFemale,
+        };
+      }
+      break;
+    case "distance":
+      prescription.distance = getDefaultDistance(format);
+      break;
+    case "calories":
+      prescription.calories = calorieTarget ?? getProgrammedCalories(format);
+      break;
+    case "duration":
+      prescription.duration = getDefaultDuration();
+      break;
+  }
+
+  return prescription;
+}
+
+function getProgrammedCalories(format: WorkoutFormat): number {
+  const base = 15;
+  switch (format) {
+    case WorkoutFormat.EMOM:
+      return Math.round(base * 0.7);
+    case WorkoutFormat.Chipper:
+      return base * 2;
+    default:
+      return base;
+  }
 }
 
 function getDefaultReps(format: WorkoutFormat, movement: Movement): number {

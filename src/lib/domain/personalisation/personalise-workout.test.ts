@@ -14,7 +14,7 @@ import {
   personaliseWorkout,
   UnableToPersonaliseWorkoutError,
 } from "./personalise-workout";
-import { createMovementPrescription } from "./prescription";
+import { createMovementPrescription } from "../prescription";
 
 function workoutWith(movementId: string, load?: number): Workout {
   const movement = getMovementOrThrow(movementId);
@@ -29,6 +29,24 @@ function workoutWith(movementId: string, load?: number): Workout {
 }
 
 describe("personaliseWorkout", () => {
+  it.each([
+    [Sex.Male, 225],
+    [Sex.Female, 155],
+  ])("resolves the %s side of an Rx Pair", (sex, expectedLoad) => {
+    const workout = workoutWith("back_squat");
+    workout.movements[0].rxLoad = { male: 225, female: 155 };
+
+    const result = personaliseWorkout(workout, {
+      sex,
+      equipment: EQUIPMENT_PRESETS.fullGym,
+      impediments: [],
+    });
+
+    expect(result.workout.movements[0].load).toBe(expectedLoad);
+    expect(result.workout.movements[0].rxLoad).toBeUndefined();
+    expect(result.changes[0].explanations.join(" ")).toContain("Rx Pair");
+  });
+
   it("substitutes a movement blocked by an Impediment and explains why", () => {
     const constraints = buildInjuryConstraints(
       { muscles: [], joints: [Joint.Knees] },
@@ -266,7 +284,9 @@ describe("personaliseWorkout", () => {
       ImpedimentSeverity.Moderate,
     );
 
-    const result = personaliseWorkout(workoutWith("back_squat", 225), {
+    const workout = workoutWith("back_squat");
+    workout.movements[0].rxLoad = { male: 225, female: 155 };
+    const result = personaliseWorkout(workout, {
       sex: Sex.Male,
       equipment: EQUIPMENT_PRESETS.fullGym,
       impediments: [
@@ -289,6 +309,7 @@ describe("personaliseWorkout", () => {
     expect(result.changes[0].explanations.join(" ")).toContain(
       "Load capped at 50%",
     );
+    expect(result.changes[0].explanations.join(" ")).toContain("Rx Pair");
   });
 
   it("is deterministic for the same Workout and Athlete context", () => {

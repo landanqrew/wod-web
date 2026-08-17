@@ -1,5 +1,11 @@
 import { Movement } from "./movement";
 
+/** The male/female Rx load written on a Programmed Workout. */
+export interface RxPair {
+  male: number;
+  female: number;
+}
+
 /**
  * Workout format types.
  */
@@ -36,6 +42,8 @@ export interface MovementPrescription {
   reps?: number;
   /** Load in lbs (if applicable) */
   load?: number;
+  /** Programmed male/female load, resolved during Personalisation */
+  rxLoad?: RxPair;
   /** Distance in meters (if applicable) */
   distance?: number;
   /** Duration in seconds (if applicable) */

@@ -1,2 +1,2 @@
 export * from "./personalise-workout";
-export * from "./prescription";
+export * from "../prescription";

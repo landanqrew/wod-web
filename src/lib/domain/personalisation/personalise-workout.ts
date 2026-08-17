@@ -1,9 +1,9 @@
-import type { Athlete } from "../models/athlete";
+import { Sex, type Athlete } from "../models/athlete";
 import type { MovementPrescription, Workout } from "../models/workout";
 import { getMovement } from "../movements/library";
 import { mergeConstraints } from "../scaling/constraint-engine";
 import { findSubstitution } from "../scaling/substitution";
-import { createMovementPrescription } from "./prescription";
+import { createMovementPrescription } from "../prescription";
 
 export type PersonalisationContext = Pick<
   Athlete,
@@ -46,6 +46,15 @@ export function personaliseWorkout(
   const unresolved: UnresolvedPersonalisation[] = [];
 
   const movements = workout.movements.map((prescription, movementIndex) => {
+    const resolvedRxPair = prescription.rxLoad !== undefined;
+    const { rxLoad, ...prescriptionWithoutRxPair } = prescription;
+    const athletePrescription: MovementPrescription = rxLoad !== undefined
+      ? {
+          ...prescriptionWithoutRxPair,
+          load:
+            context.sex === Sex.Male ? rxLoad.male : rxLoad.female,
+        }
+      : { ...prescription };
     const movement =
       prescription.movement ?? getMovement(prescription.movementId);
     if (!movement) {
@@ -75,8 +84,10 @@ export function personaliseWorkout(
 
     const substituted = result.replacement.id !== prescription.movementId;
     const scalesExistingLoad =
-      prescription.load !== undefined && result.loadScale !== 1;
-    if (!substituted && !scalesExistingLoad) return { ...prescription };
+      athletePrescription.load !== undefined && result.loadScale !== 1;
+    if (!substituted && !scalesExistingLoad && !resolvedRxPair) {
+      return { ...prescription };
+    }
 
     const personalised: MovementPrescription = substituted
       ? {
@@ -89,7 +100,7 @@ export function personaliseWorkout(
             ? { notes: prescription.notes }
             : {}),
         }
-      : { ...prescription };
+      : { ...athletePrescription };
 
     if (substituted) {
       const originalUsesReps =
@@ -128,16 +139,28 @@ export function personaliseWorkout(
       if (personalised.load !== undefined && result.loadScale !== 1) {
         personalised.load = Math.round(personalised.load * result.loadScale);
       }
-    } else if (prescription.load !== undefined && result.loadScale !== 1) {
-      personalised.load = Math.round(prescription.load * result.loadScale);
+    } else if (
+      athletePrescription.load !== undefined &&
+      result.loadScale !== 1
+    ) {
+      personalised.load = Math.round(
+        athletePrescription.load * result.loadScale,
+      );
     }
 
-    if (substituted || personalised.load !== prescription.load) {
+    if (
+      substituted ||
+      resolvedRxPair ||
+      personalised.load !== prescription.load
+    ) {
       changes.push({
         movementIndex,
         originalMovementId: prescription.movementId,
         personalisedMovementId: result.replacement.id,
         explanations: [
+          ...(resolvedRxPair && !substituted
+            ? [`Resolved Rx Pair for ${context.sex} Athlete`]
+            : []),
           ...result.originalReasons,
           ...result.replacementWarnings,
         ],
