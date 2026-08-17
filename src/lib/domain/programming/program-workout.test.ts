@@ -133,6 +133,22 @@ describe("programWorkout", () => {
         rounds: 5,
         emomMinutes: 12,
       }),
-    ).toMatchObject({ timeCap: 12, rounds: undefined, emomMinutes: undefined });
+    ).toMatchObject({
+      timeCap: 12,
+      rounds: undefined,
+      emomMinutes: undefined,
+      estimatedDuration: 12,
+    });
+    expect(
+      programWorkout(context, {
+        format: WorkoutFormat.EMOM,
+        timeCap: 99,
+        emomMinutes: 12,
+      }),
+    ).toMatchObject({
+      timeCap: undefined,
+      emomMinutes: 12,
+      estimatedDuration: 12,
+    });
   });
 });

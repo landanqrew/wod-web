@@ -132,6 +132,18 @@ export function programWorkout(
   }
 
   const selected = selectDiverseMovements(available, movementCount);
+  const timeCap = TIME_CAP_FORMATS.has(options.format)
+    ? options.timeCap ?? defaults.timeCap
+    : undefined;
+  const rounds = ROUND_FORMATS.has(options.format)
+    ? options.rounds ?? defaults.rounds
+    : undefined;
+  const emomMinutes =
+    options.format === WorkoutFormat.EMOM
+      ? options.emomMinutes ?? defaults.emomMinutes
+      : undefined;
+  const workInterval = defaults.workInterval;
+  const restInterval = defaults.restInterval;
 
   return {
     id: generateId(),
@@ -144,21 +156,20 @@ export function programWorkout(
         options.calorieTarget,
       ),
     ),
-    timeCap: TIME_CAP_FORMATS.has(options.format)
-      ? options.timeCap ?? defaults.timeCap
-      : undefined,
-    rounds: ROUND_FORMATS.has(options.format)
-      ? options.rounds ?? defaults.rounds
-      : undefined,
-    emomMinutes:
-      options.format === WorkoutFormat.EMOM
-        ? options.emomMinutes ?? defaults.emomMinutes
-        : undefined,
-    workInterval: defaults.workInterval,
-    restInterval: defaults.restInterval,
+    timeCap,
+    rounds,
+    emomMinutes,
+    workInterval,
+    restInterval,
     scoreType: getScoreType(options.format),
     isBenchmark: false,
-    estimatedDuration: estimateDuration(options),
+    estimatedDuration: estimateDuration({
+      timeCap,
+      emomMinutes,
+      rounds,
+      workInterval,
+      restInterval,
+    }),
   };
 }
 
@@ -222,11 +233,20 @@ function formatWorkoutName(format: WorkoutFormat, movements: Movement[]): string
   return `${format.toUpperCase()}: ${movementNames.join(", ")}${suffix}`;
 }
 
-function estimateDuration(options: ProgramOptions): number {
-  const defaults = FORMAT_DEFAULTS[options.format];
-  if (options.timeCap) return options.timeCap;
-  if (options.emomMinutes) return options.emomMinutes;
-  if (defaults.timeCap) return defaults.timeCap;
-  if (defaults.emomMinutes) return defaults.emomMinutes;
+function estimateDuration(timing: {
+  timeCap?: number;
+  emomMinutes?: number;
+  rounds?: number;
+  workInterval?: number;
+  restInterval?: number;
+}): number {
+  if (timing.timeCap) return timing.timeCap;
+  if (timing.emomMinutes) return timing.emomMinutes;
+  if (timing.rounds && timing.workInterval !== undefined) {
+    return Math.ceil(
+      (timing.rounds * (timing.workInterval + (timing.restInterval ?? 0))) /
+        60,
+    );
+  }
   return 15;
 }
