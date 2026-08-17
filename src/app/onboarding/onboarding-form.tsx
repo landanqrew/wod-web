@@ -9,7 +9,7 @@ import { ChipToggle, FieldRow, Input, Label, Segmented, Select } from "@/compone
 import { completeOnboarding } from "@/lib/actions/athlete";
 import { Equipment, EQUIPMENT_PRESETS } from "@/lib/domain/models/equipment";
 import { Sex } from "@/lib/domain/models/athlete";
-import { BodyRegion } from "@/lib/domain/models/body";
+import { Joint, Muscle } from "@/lib/domain/models/body";
 import {
   ImpedimentCategory,
   ImpedimentSeverity,
@@ -29,24 +29,15 @@ type ImpedimentDraft = {
   key: string;
   category: ImpedimentCategory;
   severity: ImpedimentSeverity;
-  affectedRegions: BodyRegion[];
+  affectedMuscles: Muscle[];
+  affectedJoints: Joint[];
   description: string;
   trimester?: 1 | 2 | 3;
   weeksPostpartum?: number;
 };
 
-const JOINT_REGIONS = [
-  BodyRegion.Shoulders,
-  BodyRegion.Elbows,
-  BodyRegion.Wrists,
-  BodyRegion.Knees,
-  BodyRegion.Ankles,
-  BodyRegion.Hips,
-  BodyRegion.Spine,
-  BodyRegion.LowerBack,
-  BodyRegion.Core,
-  BodyRegion.Neck,
-];
+const MUSCLES = Object.values(Muscle);
+const JOINTS = Object.values(Joint);
 
 export function OnboardingForm({ defaultName }: { defaultName: string }) {
   const [name, setName] = React.useState(defaultName);
@@ -75,7 +66,8 @@ export function OnboardingForm({ defaultName }: { defaultName: string }) {
         key: crypto.randomUUID(),
         category: ImpedimentCategory.AcuteInjury,
         severity: ImpedimentSeverity.Moderate,
-        affectedRegions: [],
+        affectedMuscles: [],
+        affectedJoints: [],
         description: "",
       },
     ]);
@@ -102,7 +94,8 @@ export function OnboardingForm({ defaultName }: { defaultName: string }) {
         impediments: impedimentDrafts.map((d) => ({
           category: d.category,
           severity: d.severity,
-          affectedRegions: d.affectedRegions,
+          affectedMuscles: d.affectedMuscles,
+          affectedJoints: d.affectedJoints,
           description: d.description,
           startDate: new Date().toISOString().slice(0, 10),
           trimester: d.category === ImpedimentCategory.Pregnancy ? (d.trimester ?? 1) : undefined,
@@ -259,24 +252,46 @@ export function OnboardingForm({ defaultName }: { defaultName: string }) {
 
               {d.category !== ImpedimentCategory.Pregnancy &&
               d.category !== ImpedimentCategory.Postpartum ? (
-                <div className="flex flex-col gap-1.5">
-                  <Label>Affected areas</Label>
+                <div className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-1.5">
+                  <Label>Affected Muscles</Label>
                   <div className="flex flex-wrap gap-1.5">
-                    {JOINT_REGIONS.map((region) => (
+                    {MUSCLES.map((muscle) => (
                       <ChipToggle
-                        key={region}
-                        active={d.affectedRegions.includes(region)}
+                        key={muscle}
+                        active={d.affectedMuscles.includes(muscle)}
                         onClick={() =>
                           patch(d.key, {
-                            affectedRegions: d.affectedRegions.includes(region)
-                              ? d.affectedRegions.filter((r) => r !== region)
-                              : [...d.affectedRegions, region],
+                            affectedMuscles: d.affectedMuscles.includes(muscle)
+                              ? d.affectedMuscles.filter((item) => item !== muscle)
+                              : [...d.affectedMuscles, muscle],
                           })
                         }
                       >
-                        {titleCase(region)}
+                        {titleCase(muscle)}
                       </ChipToggle>
                     ))}
+                  </div>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label>Affected Joints</Label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {JOINTS.map((joint) => (
+                        <ChipToggle
+                          key={joint}
+                          active={d.affectedJoints.includes(joint)}
+                          onClick={() =>
+                            patch(d.key, {
+                              affectedJoints: d.affectedJoints.includes(joint)
+                                ? d.affectedJoints.filter((item) => item !== joint)
+                                : [...d.affectedJoints, joint],
+                            })
+                          }
+                        >
+                          {titleCase(joint)}
+                        </ChipToggle>
+                      ))}
+                    </div>
                   </div>
                 </div>
               ) : null}

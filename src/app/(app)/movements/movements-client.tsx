@@ -19,7 +19,9 @@ export function MovementsClient({ movements }: { movements: Movement[] }) {
     const q = query.toLowerCase();
     return (
       m.name.toLowerCase().includes(q) ||
-      m.muscleGroups.some((g) => g.includes(q)) ||
+      m.primaryMuscles.some((muscle) => muscle.includes(q)) ||
+      m.secondaryMuscles.some((muscle) => muscle.includes(q)) ||
+      m.movementPatterns.some((g) => g.includes(q)) ||
       m.equipment.some((e) => e.includes(q))
     );
   });
@@ -30,7 +32,7 @@ export function MovementsClient({ movements }: { movements: Movement[] }) {
 
       <div className="mb-3.5 flex flex-wrap items-center gap-2">
         <Input
-          placeholder="Search movements, muscle groups, equipment…"
+          placeholder="Search movements, Muscles, Patterns, equipment…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           className="h-9 max-w-xs rounded-full py-0"
@@ -52,7 +54,7 @@ export function MovementsClient({ movements }: { movements: Movement[] }) {
               <tr className="border-b border-border">
                 <th className="table-head-cell">Movement</th>
                 <th className="table-head-cell">Modality</th>
-                <th className="table-head-cell">Muscle groups</th>
+                <th className="table-head-cell">Movement Patterns</th>
                 <th className="table-head-cell">Equipment</th>
                 <th className="table-head-cell">Tier</th>
                 <th className="table-head-cell text-right">Rx load</th>
@@ -68,7 +70,7 @@ export function MovementsClient({ movements }: { movements: Movement[] }) {
                   </td>
                   <td className="px-3 py-1.5 text-muted-fg">{titleCase(m.modality)}</td>
                   <td className="px-3 py-1.5 text-muted-fg">
-                    {m.muscleGroups.map(titleCase).join(", ") || EM_DASH}
+                    {m.movementPatterns.map(titleCase).join(", ") || EM_DASH}
                   </td>
                   <td className="px-3 py-1.5 font-mono text-[12px] text-subtle">
                     {m.equipment.map((e) => e.replace(/_/g, " ")).join(", ")}

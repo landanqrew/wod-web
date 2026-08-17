@@ -10,7 +10,7 @@ import {
   buildPostpartumConstraints,
   buildPregnancyConstraints,
 } from "@/lib/domain/models/impediment";
-import type { BodyRegion } from "@/lib/domain/models/body";
+import type { Joint, Muscle } from "@/lib/domain/models/body";
 import type { z } from "zod";
 
 export type ImpedimentInput = z.infer<typeof impedimentInputSchema>;
@@ -24,7 +24,10 @@ export function deriveConstraints(input: ImpedimentInput): MovementConstraint {
     return buildPostpartumConstraints(input.weeksPostpartum ?? 0);
   }
   return buildInjuryConstraints(
-    input.affectedRegions as BodyRegion[],
+    {
+      muscles: input.affectedMuscles as Muscle[],
+      joints: input.affectedJoints as Joint[],
+    },
     input.severity as ImpedimentSeverity
   );
 }
@@ -35,7 +38,8 @@ function impedimentRow(athleteId: string, input: ImpedimentInput) {
     athleteId,
     category: input.category,
     severity: input.severity,
-    affectedRegions: input.affectedRegions,
+    affectedMuscles: input.affectedMuscles,
+    affectedJoints: input.affectedJoints,
     description: input.description,
     startDate: input.startDate,
     endDate: input.endDate ?? null,

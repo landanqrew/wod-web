@@ -71,7 +71,7 @@ export interface ScalingNote {
  * Find a substitute for a movement at a target difficulty tier.
  *
  * Walks the substitution chain and searches the library for a movement
- * in the same muscle group(s) at or below the target tier.
+ * that trains at least one of the same Muscles at or below the target tier.
  */
 function findTieredMovement(
   movement: Movement,
@@ -97,8 +97,11 @@ function findTieredMovement(
     }
   }
 
-  // Broader search: same muscle group, at or below target tier
-  const originalGroups = new Set(movement.muscleGroups);
+  // Broader search: shared Muscle, at or below target tier
+  const originalMuscles = new Set([
+    ...movement.primaryMuscles,
+    ...movement.secondaryMuscles,
+  ]);
   const candidates: Array<{ m: Movement; score: number }> = [];
 
   for (const candidate of getAllMovements()) {
@@ -109,13 +112,16 @@ function findTieredMovement(
 
     if (tierIndex(candidate.difficulty) > targetIdx) continue;
 
-    const sharedGroups = candidate.muscleGroups.filter((g) =>
-      originalGroups.has(g)
+    const sharedMuscles = [
+      ...candidate.primaryMuscles,
+      ...candidate.secondaryMuscles,
+    ].filter((muscle) =>
+      originalMuscles.has(muscle)
     ).length;
-    if (sharedGroups === 0) continue;
+    if (sharedMuscles === 0) continue;
 
     const sameModality = candidate.modality === movement.modality ? 1 : 0;
-    const score = sharedGroups * 10 + sameModality;
+    const score = sharedMuscles * 10 + sameModality;
     candidates.push({ m: candidate, score });
   }
 

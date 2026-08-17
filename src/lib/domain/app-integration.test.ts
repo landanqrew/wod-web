@@ -14,7 +14,7 @@ import {
   buildInjuryConstraints,
   buildPregnancyConstraints,
 } from "./models/impediment";
-import { BodyRegion } from "./models/body";
+import { Joint, Muscle } from "./models/body";
 
 /*
   These cover the two paths the web app leans on hardest: the generator honoring
@@ -39,7 +39,8 @@ describe("generator constraint filtering", () => {
         id: "imp_1",
         category: ImpedimentCategory.Pregnancy,
         severity: ImpedimentSeverity.Moderate,
-        affectedRegions: [],
+        affectedMuscles: [],
+        affectedJoints: [],
         description: "Third trimester",
         startDate: "2026-01-01",
         trimester: 3,
@@ -55,7 +56,7 @@ describe("generator constraint filtering", () => {
           expect(movement.tags).not.toContain("inverted");
           expect(movement.tags).not.toContain("high_impact");
           expect(movement.tags).not.toContain("max_effort");
-          expect(movement.primaryRegions).not.toContain(BodyRegion.Core);
+          expect(movement.primaryMuscles).not.toContain(Muscle.Core);
         }
       }
     }
@@ -63,7 +64,7 @@ describe("generator constraint filtering", () => {
 
   it("excludes shoulder-loading movements for a severe shoulder injury", () => {
     const constraints = buildInjuryConstraints(
-      [BodyRegion.Shoulders],
+      { muscles: [Muscle.Shoulders], joints: [] },
       ImpedimentSeverity.Severe
     );
     const allowed = filterAllowedMovements(
@@ -74,7 +75,7 @@ describe("generator constraint filtering", () => {
 
     expect(allowed.length).toBeGreaterThan(0);
     for (const movement of allowed) {
-      expect(movement.primaryRegions).not.toContain(BodyRegion.Shoulders);
+      expect(movement.primaryMuscles).not.toContain(Muscle.Shoulders);
       expect(movement.tags).not.toContain("overhead");
     }
   });
@@ -104,26 +105,34 @@ describe("generator constraint filtering", () => {
         id: "a",
         category: ImpedimentCategory.Rehab,
         severity: ImpedimentSeverity.Mild,
-        affectedRegions: [BodyRegion.Knees],
+        affectedMuscles: [],
+        affectedJoints: [Joint.Knees],
         description: "",
         startDate: "2026-01-01",
-        constraints: buildInjuryConstraints([BodyRegion.Knees], ImpedimentSeverity.Mild),
+        constraints: buildInjuryConstraints(
+          { muscles: [], joints: [Joint.Knees] },
+          ImpedimentSeverity.Mild
+        ),
       },
       {
         id: "b",
         category: ImpedimentCategory.AcuteInjury,
         severity: ImpedimentSeverity.Moderate,
-        affectedRegions: [BodyRegion.Shoulders],
+        affectedMuscles: [Muscle.Shoulders],
+        affectedJoints: [],
         description: "",
         startDate: "2026-01-01",
-        constraints: buildInjuryConstraints([BodyRegion.Shoulders], ImpedimentSeverity.Moderate),
+        constraints: buildInjuryConstraints(
+          { muscles: [Muscle.Shoulders], joints: [] },
+          ImpedimentSeverity.Moderate
+        ),
       },
     ]);
 
     expect(merged).not.toBeNull();
     expect(merged!.maxLoadPercent).toBe(50); // the lower of 80 and 50
     expect(merged!.allowKipping).toBe(false); // any `false` wins
-    expect(merged!.avoidRegions).toContain(BodyRegion.Shoulders);
+    expect(merged!.avoidMuscles).toContain(Muscle.Shoulders);
   });
 });
 

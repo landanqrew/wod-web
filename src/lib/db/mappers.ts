@@ -11,8 +11,14 @@ import type { Athlete } from "@/lib/domain/models/athlete";
 import { Sex } from "@/lib/domain/models/athlete";
 import type { Equipment } from "@/lib/domain/models/equipment";
 import type { Impediment } from "@/lib/domain/models/impediment";
-import type { ImpedimentCategory, ImpedimentSeverity } from "@/lib/domain/models/impediment";
-import type { BodyRegion } from "@/lib/domain/models/body";
+import {
+  buildInjuryConstraints,
+  buildPostpartumConstraints,
+  buildPregnancyConstraints,
+  ImpedimentCategory,
+} from "@/lib/domain/models/impediment";
+import type { ImpedimentSeverity } from "@/lib/domain/models/impediment";
+import type { Joint, Muscle } from "@/lib/domain/models/body";
 import type { TrainingSession, Workout } from "@/lib/domain/models/workout";
 import { ScoreType, WorkoutFormat } from "@/lib/domain/models/workout";
 import type { PersonalRecord, WorkoutResult } from "@/lib/domain/models/workout-result";
@@ -31,17 +37,32 @@ function opt<T>(value: T | null): T | undefined {
 }
 
 export function rowToImpediment(row: ImpedimentRow): Impediment {
+  const category = row.category as ImpedimentCategory;
+  const severity = row.severity as ImpedimentSeverity;
+  const affectedMuscles = row.affectedMuscles as Muscle[];
+  const affectedJoints = row.affectedJoints as Joint[];
+  const constraints =
+    category === ImpedimentCategory.Pregnancy
+      ? buildPregnancyConstraints((row.trimester ?? 1) as 1 | 2 | 3)
+      : category === ImpedimentCategory.Postpartum
+        ? buildPostpartumConstraints(row.weeksPostpartum ?? 0)
+        : buildInjuryConstraints(
+            { muscles: affectedMuscles, joints: affectedJoints },
+            severity
+          );
+
   return {
     id: row.id,
-    category: row.category as ImpedimentCategory,
-    severity: row.severity as ImpedimentSeverity,
-    affectedRegions: row.affectedRegions as BodyRegion[],
+    category,
+    severity,
+    affectedMuscles,
+    affectedJoints,
     description: row.description,
     startDate: row.startDate,
     endDate: opt(row.endDate),
     trimester: opt(row.trimester) as 1 | 2 | 3 | undefined,
     weeksPostpartum: opt(row.weeksPostpartum),
-    constraints: row.constraints,
+    constraints,
   };
 }
 

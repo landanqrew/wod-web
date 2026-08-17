@@ -12,7 +12,7 @@ import {
   ImpedimentSeverity,
 } from "../models/impediment";
 import type { Impediment } from "../models/impediment";
-import { BodyRegion } from "../models/body";
+import { Joint, Muscle } from "../models/body";
 import { Equipment } from "../models/equipment";
 import { EQUIPMENT_PRESETS } from "../models/equipment";
 import { getMovementOrThrow, getAllMovements } from "../movements/library";
@@ -80,7 +80,7 @@ describe("checkMovement", () => {
 
   it("rejects weighted movements when severity is severe", () => {
     const constraints = buildInjuryConstraints(
-      [BodyRegion.Shoulders],
+      { muscles: [Muscle.Shoulders], joints: [] },
       ImpedimentSeverity.Severe
     );
     const strictPress = getMovementOrThrow("strict_press");
@@ -90,19 +90,71 @@ describe("checkMovement", () => {
 
   it("rejects movements stressing injured primary region", () => {
     const constraints = buildInjuryConstraints(
-      [BodyRegion.Shoulders],
+      { muscles: [Muscle.Shoulders], joints: [] },
       ImpedimentSeverity.Moderate
     );
     const strictPress = getMovementOrThrow("strict_press");
-    // strict_press primaryRegions: Shoulders, Triceps -- Shoulders is avoided
+    // strict_press primaryMuscles: Shoulders, Triceps -- Shoulders is avoided
     const result = checkMovement(strictPress, constraints, EQUIPMENT_PRESETS.fullGym);
     expect(result.allowed).toBe(false);
-    expect(result.reasons.some((r) => r.includes("protected region"))).toBe(true);
+    expect(result.reasons).not.toHaveLength(0);
+  });
+
+  it("blocks movements that load an injured knee", () => {
+    const constraints = buildInjuryConstraints(
+      { muscles: [], joints: [Joint.Knees] },
+      ImpedimentSeverity.Moderate
+    );
+
+    for (const movementId of ["back_squat", "walking_lunge", "box_jump"]) {
+      const movement = getMovementOrThrow(movementId);
+      const result = checkMovement(
+        movement,
+        constraints,
+        EQUIPMENT_PRESETS.fullGym
+      );
+
+      expect(result.allowed, movement.name).toBe(false);
+    }
+  });
+
+  it("blocks front-rack and pressing movements that load an injured wrist", () => {
+    const constraints = buildInjuryConstraints(
+      { muscles: [], joints: [Joint.Wrists] },
+      ImpedimentSeverity.Moderate
+    );
+
+    for (const movementId of ["front_squat", "strict_press"]) {
+      const result = checkMovement(
+        getMovementOrThrow(movementId),
+        constraints,
+        EQUIPMENT_PRESETS.fullGym
+      );
+
+      expect(result.allowed, movementId).toBe(false);
+    }
+  });
+
+  it("blocks pulling and pressing movements that load an injured elbow", () => {
+    const constraints = buildInjuryConstraints(
+      { muscles: [], joints: [Joint.Elbows] },
+      ImpedimentSeverity.Moderate
+    );
+
+    for (const movementId of ["pull_up", "strict_press"]) {
+      const result = checkMovement(
+        getMovementOrThrow(movementId),
+        constraints,
+        EQUIPMENT_PRESETS.fullGym
+      );
+
+      expect(result.allowed, movementId).toBe(false);
+    }
   });
 
   it("allows movements that don't stress injured region", () => {
     const constraints = buildInjuryConstraints(
-      [BodyRegion.Shoulders],
+      { muscles: [Muscle.Shoulders], joints: [] },
       ImpedimentSeverity.Moderate
     );
     const row = getMovementOrThrow("row");
@@ -110,6 +162,23 @@ describe("checkMovement", () => {
     // Shoulders not involved at all -- should be fully allowed
     const result = checkMovement(row, constraints, EQUIPMENT_PRESETS.fullGym);
     expect(result.allowed).toBe(true);
+  });
+
+  it("warns without blocking when only a secondary Muscle is protected", () => {
+    const constraints = buildInjuryConstraints(
+      { muscles: [Muscle.UpperBack], joints: [] },
+      ImpedimentSeverity.Moderate
+    );
+    const strictPress = getMovementOrThrow("strict_press");
+
+    const result = checkMovement(
+      strictPress,
+      constraints,
+      EQUIPMENT_PRESETS.fullGym
+    );
+
+    expect(result.allowed).toBe(true);
+    expect(result.warnings).not.toHaveLength(0);
   });
 
   it("rejects high-impact movements for early postpartum", () => {
@@ -131,7 +200,8 @@ describe("mergeConstraints", () => {
         id: "1",
         category: ImpedimentCategory.Pregnancy,
         severity: ImpedimentSeverity.Moderate,
-        affectedRegions: [BodyRegion.Core],
+        affectedMuscles: [Muscle.Core],
+        affectedJoints: [],
         description: "Pregnancy T2",
         startDate: "2025-01-01",
         trimester: 2,
@@ -141,11 +211,12 @@ describe("mergeConstraints", () => {
         id: "2",
         category: ImpedimentCategory.AcuteInjury,
         severity: ImpedimentSeverity.Mild,
-        affectedRegions: [BodyRegion.Wrists],
+        affectedMuscles: [],
+        affectedJoints: [Joint.Wrists],
         description: "Wrist strain",
         startDate: "2025-06-01",
         constraints: buildInjuryConstraints(
-          [BodyRegion.Wrists],
+          { muscles: [], joints: [Joint.Wrists] },
           ImpedimentSeverity.Mild
         ),
       },
@@ -153,8 +224,7 @@ describe("mergeConstraints", () => {
 
     const merged = mergeConstraints(impediments);
     expect(merged).not.toBeNull();
-    // Should combine avoid regions from both
-    expect(merged!.avoidRegions).toContain(BodyRegion.Core);
+    expect(merged!.avoidMuscles).toContain(Muscle.Core);
     // Pregnancy T2 disallows kipping, so merged should too
     expect(merged!.allowKipping).toBe(false);
     // Pregnancy T2 disallows high impact, so merged should too

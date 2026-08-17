@@ -2,13 +2,13 @@ import "dotenv/config";
 import { afterAll, describe, expect, it } from "vitest";
 import { eq, inArray } from "drizzle-orm";
 import { db, pool } from "@/lib/db";
-import { users } from "@/lib/db/schema";
+import { impediments, users } from "@/lib/db/schema";
 import { createAthleteProfile, deriveConstraints } from "./profile";
 import { getAthleteById } from "@/lib/data/athlete";
 import { newId } from "@/lib/ids";
 import { Sex } from "@/lib/domain/models/athlete";
 import { Equipment } from "@/lib/domain/models/equipment";
-import { BodyRegion } from "@/lib/domain/models/body";
+import { Muscle } from "@/lib/domain/models/body";
 import {
   ImpedimentCategory,
   ImpedimentSeverity,
@@ -44,13 +44,31 @@ describe("onboarding", () => {
         {
           category: ImpedimentCategory.Pregnancy,
           severity: ImpedimentSeverity.Moderate,
-          affectedRegions: [],
+          affectedMuscles: [],
+          affectedJoints: [],
           description: "Third trimester",
           startDate: "2026-06-01",
           trimester: 3,
         },
       ],
     });
+
+    await db
+      .update(impediments)
+      .set({
+        constraints: {
+          avoidMuscles: [],
+          avoidJoints: [],
+          avoidTags: [],
+          allowHighImpact: true,
+          allowOverhead: true,
+          allowInversion: true,
+          allowProne: true,
+          allowKipping: true,
+          allowHeavyAxialLoad: true,
+        },
+      })
+      .where(eq(impediments.athleteId, athleteId));
 
     const athlete = await getAthleteById(athleteId);
     expect(athlete).not.toBeNull();
@@ -70,11 +88,12 @@ describe("onboarding", () => {
     }
   });
 
-  it("derives injury constraints from the affected regions, not from client input", () => {
+  it("derives injury constraints from the affected body parts, not from client input", () => {
     const constraints = deriveConstraints({
       category: ImpedimentCategory.AcuteInjury,
       severity: ImpedimentSeverity.Severe,
-      affectedRegions: [BodyRegion.Shoulders],
+      affectedMuscles: [Muscle.Shoulders],
+      affectedJoints: [],
       description: "",
       startDate: "2026-06-01",
     });

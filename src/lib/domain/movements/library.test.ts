@@ -4,10 +4,10 @@ import {
   getMovement,
   getMovementOrThrow,
   getMovementsByModality,
-  getMovementsByMuscleGroup,
+  getMovementsByMovementPattern,
   getMovementsByEquipment,
 } from "./library";
-import { Modality, MuscleGroup } from "../models/body";
+import { Modality, MovementPattern } from "../models/body";
 import { Equipment } from "../models/equipment";
 
 describe("movement library", () => {
@@ -25,13 +25,20 @@ describe("movement library", () => {
 
   it("every movement has at least one primary region", () => {
     for (const m of getAllMovements()) {
-      expect(m.primaryRegions.length).toBeGreaterThan(0);
+      expect(m.primaryMuscles.length).toBeGreaterThan(0);
     }
   });
 
-  it("every movement has at least one muscle group", () => {
+  it("every movement declares the joints it loads", () => {
+    for (const movement of getAllMovements()) {
+      expect(movement.loadedJoints, movement.name).toBeDefined();
+      expect(movement.loadedJoints?.length, movement.name).toBeGreaterThan(0);
+    }
+  });
+
+  it("every movement has at least one Movement Pattern", () => {
     for (const m of getAllMovements()) {
-      expect(m.muscleGroups.length).toBeGreaterThan(0);
+      expect(m.movementPatterns.length).toBeGreaterThan(0);
     }
   });
 
@@ -62,11 +69,11 @@ describe("movement library", () => {
     }
   });
 
-  it("filters by muscle group", () => {
-    const pushMovements = getMovementsByMuscleGroup(MuscleGroup.Push);
+  it("filters by Movement Pattern", () => {
+    const pushMovements = getMovementsByMovementPattern(MovementPattern.Push);
     expect(pushMovements.length).toBeGreaterThan(0);
     for (const m of pushMovements) {
-      expect(m.muscleGroups).toContain(MuscleGroup.Push);
+      expect(m.movementPatterns).toContain(MovementPattern.Push);
     }
   });
 

@@ -15,8 +15,14 @@ export default async function GeneratePage() {
         constraints.maxLoadPercent !== undefined
           ? `loads capped at ${constraints.maxLoadPercent}%`
           : null,
-        constraints.avoidRegions.length
-          ? `avoiding ${constraints.avoidRegions.map(titleCase).join(", ").toLowerCase()}`
+        constraints.avoidMuscles.length || constraints.avoidJoints.length
+          ? `avoiding ${[
+              ...constraints.avoidMuscles,
+              ...constraints.avoidJoints,
+            ]
+              .map(titleCase)
+              .join(", ")
+              .toLowerCase()}`
           : null,
       ]
         .filter(Boolean)
