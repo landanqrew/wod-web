@@ -8,6 +8,10 @@ import {
 } from "../db/schema";
 import { newId } from "../ids";
 
+type ReservationTransaction = Parameters<
+  Parameters<typeof db.transaction>[0]
+>[0];
+
 export class ClassSessionFullError extends Error {
   constructor() {
     super("Class Session is at capacity");
@@ -20,75 +24,89 @@ export async function reserveClassSessionForAthlete(
   athleteId: string,
   now: Date = new Date(),
 ) {
-  return db.transaction(async (tx) => {
-    const [candidate] = await tx
-      .select({
-        gymId: gymClasses.gymId,
-      })
-      .from(classSessions)
-      .innerJoin(gymClasses, eq(gymClasses.id, classSessions.classId))
-      .where(eq(classSessions.id, classSessionId))
-      .limit(1);
-    if (!candidate) throw new Error("Class Session not found");
-
-    const [membership] = await tx
-      .select({ athleteId: memberships.athleteId })
-      .from(memberships)
-      .where(
-        and(
-          eq(memberships.gymId, candidate.gymId),
-          eq(memberships.athleteId, athleteId),
-        ),
-      )
-      .limit(1)
-      .for("update");
-    if (!membership) throw new Error("Class Session not found");
-
-    const [session] = await tx
-      .select({
-        capacity: gymClasses.capacity,
-        cancelledAt: classSessions.cancelledAt,
-      })
-      .from(classSessions)
-      .innerJoin(gymClasses, eq(gymClasses.id, classSessions.classId))
-      .where(
-        and(
-          eq(classSessions.id, classSessionId),
-          gt(classSessions.startsAt, now),
-        ),
-      )
-      .limit(1)
-      .for("update", { of: classSessions });
-    if (!session || session.cancelledAt) {
-      throw new Error("Class Session not found");
-    }
-
-    const [existing] = await tx
-      .select({ id: reservations.id })
-      .from(reservations)
-      .where(
-        and(
-          eq(reservations.classSessionId, classSessionId),
-          eq(reservations.athleteId, athleteId),
-        ),
-      )
-      .limit(1);
-    if (existing) return existing.id;
-
-    const [headcount] = await tx
-      .select({ value: count() })
-      .from(reservations)
-      .where(eq(reservations.classSessionId, classSessionId));
-    if (headcount.value >= session.capacity) throw new ClassSessionFullError();
-
-    const reservationId = newId("reservation");
-    await tx.insert(reservations).values({
-      id: reservationId,
+  return db.transaction((tx) =>
+    reserveClassSessionForAthleteInTransaction(
+      tx,
       classSessionId,
       athleteId,
-    });
-    return reservationId;
+      now,
+    ),
+  );
+}
+
+export async function reserveClassSessionForAthleteInTransaction(
+  tx: ReservationTransaction,
+  classSessionId: string,
+  athleteId: string,
+  now: Date = new Date(),
+) {
+  const [candidate] = await tx
+    .select({
+      gymId: gymClasses.gymId,
+    })
+    .from(classSessions)
+    .innerJoin(gymClasses, eq(gymClasses.id, classSessions.classId))
+    .where(eq(classSessions.id, classSessionId))
+    .limit(1);
+  if (!candidate) throw new Error("Class Session not found");
+
+  const [membership] = await tx
+    .select({ athleteId: memberships.athleteId })
+    .from(memberships)
+    .where(
+      and(
+        eq(memberships.gymId, candidate.gymId),
+        eq(memberships.athleteId, athleteId),
+      ),
+    )
+    .limit(1)
+    .for("update");
+  if (!membership) throw new Error("Class Session not found");
+
+  const [session] = await tx
+    .select({
+      capacity: gymClasses.capacity,
+      cancelledAt: classSessions.cancelledAt,
+    })
+    .from(classSessions)
+    .innerJoin(gymClasses, eq(gymClasses.id, classSessions.classId))
+    .where(
+      and(
+        eq(classSessions.id, classSessionId),
+        gt(classSessions.startsAt, now),
+      ),
+    )
+    .limit(1)
+    .for("update", { of: classSessions });
+  if (!session || session.cancelledAt) {
+    throw new Error("Class Session not found");
+  }
+
+  const [existing] = await tx
+    .select({ id: reservations.id })
+    .from(reservations)
+    .where(
+      and(
+        eq(reservations.classSessionId, classSessionId),
+        eq(reservations.athleteId, athleteId),
+      ),
+    )
+    .limit(1);
+  if (existing) return existing.id;
+
+  const [headcount] = await tx
+    .select({ value: count() })
+    .from(reservations)
+    .where(eq(reservations.classSessionId, classSessionId));
+  if (headcount.value >= session.capacity) throw new ClassSessionFullError();
+
+  const reservationId = newId("reservation");
+  await tx.insert(reservations).values({
+    id: reservationId,
+    classSessionId,
+    athleteId,
   });
+  return reservationId;
 }
 
 export async function cancelReservationForAthlete(

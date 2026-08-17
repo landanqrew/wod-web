@@ -21,6 +21,7 @@ import {
   cancelReservationForAthlete,
   ClassSessionFullError,
   reserveClassSessionForAthlete,
+  reserveClassSessionForAthleteInTransaction,
 } from "./reservation";
 
 const ownerUserId = newId("test_user");
@@ -168,20 +169,41 @@ describe("Class Session Reservations", () => {
       email: `${memberUserId}@test.local`,
       role: MembershipRole.Member,
     });
-    const [revocation] = await Promise.allSettled([
-      revokeGymMembership(
-        gymId,
-        ownerAthleteId,
-        memberAthleteId,
-        new Date("2027-02-25T00:00:00Z"),
-      ),
-      reserveClassSessionForAthlete(
+    let releaseReservation: (() => void) | undefined;
+    const reservationCanCommit = new Promise<void>((resolve) => {
+      releaseReservation = resolve;
+    });
+    let reservationInserted: (() => void) | undefined;
+    const reservationIsInserted = new Promise<void>((resolve) => {
+      reservationInserted = resolve;
+    });
+    const concurrentReservation = db.transaction(async (tx) => {
+      await reserveClassSessionForAthleteInTransaction(
+        tx,
         session.id,
         memberAthleteId,
         beforeSession,
+      );
+      reservationInserted?.();
+      await reservationCanCommit;
+    });
+    await reservationIsInserted;
+
+    const revocation = revokeGymMembership(
+      gymId,
+      ownerAthleteId,
+      memberAthleteId,
+      new Date("2027-02-25T00:00:00Z"),
+    );
+    const revocationState = await Promise.race([
+      revocation.then(() => "completed" as const),
+      new Promise<"waiting">((resolve) =>
+        setTimeout(() => resolve("waiting"), 100),
       ),
     ]);
-    expect(revocation.status).toBe("fulfilled");
+    releaseReservation?.();
+    await Promise.all([concurrentReservation, revocation]);
+    expect(revocationState).toBe("waiting");
     await expect(
       reserveClassSessionForAthlete(session.id, memberAthleteId, beforeSession),
     ).rejects.toThrow("Class Session not found");
