@@ -43,11 +43,21 @@ export function personaliseWorkout(
 ): PersonalisationResult {
   const constraints = mergeConstraints(context.impediments);
   const changes: PersonalisationChange[] = [];
+  const unresolved: UnresolvedPersonalisation[] = [];
 
   const movements = workout.movements.map((prescription, movementIndex) => {
     const movement =
       prescription.movement ?? getMovement(prescription.movementId);
-    if (!movement) return { ...prescription };
+    if (!movement) {
+      unresolved.push({
+        movementIndex,
+        movementId: prescription.movementId,
+        explanations: [
+          `Movement "${prescription.movementId}" was not found in the library`,
+        ],
+      });
+      return { ...prescription };
+    }
 
     const result = findSubstitution(
       movement,
@@ -55,13 +65,12 @@ export function personaliseWorkout(
       context.equipment,
     );
     if (!result.replacement) {
-      throw new UnableToPersonaliseWorkoutError([
-        {
-          movementIndex,
-          movementId: prescription.movementId,
-          explanations: result.originalReasons,
-        },
-      ]);
+      unresolved.push({
+        movementIndex,
+        movementId: prescription.movementId,
+        explanations: result.originalReasons,
+      });
+      return { ...prescription };
     }
 
     const substituted = result.replacement.id !== prescription.movementId;
@@ -137,6 +146,10 @@ export function personaliseWorkout(
 
     return personalised;
   });
+
+  if (unresolved.length > 0) {
+    throw new UnableToPersonaliseWorkoutError(unresolved);
+  }
 
   return {
     workout: { ...workout, movements },

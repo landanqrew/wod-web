@@ -122,6 +122,59 @@ describe("personaliseWorkout", () => {
     }
   });
 
+  it("fails closed when a stored Movement no longer exists in the library", () => {
+    const workout = workoutWith("back_squat", 225);
+    workout.movements[0] = { movementId: "retired_movement", reps: 10 };
+
+    expect(() =>
+      personaliseWorkout(workout, {
+        sex: Sex.Male,
+        equipment: EQUIPMENT_PRESETS.fullGym,
+        impediments: [],
+      }),
+    ).toThrow(UnableToPersonaliseWorkoutError);
+  });
+
+  it("reports every Movement that cannot be personalised", () => {
+    const constraints = buildInjuryConstraints(
+      { muscles: Object.values(Muscle), joints: [] },
+      ImpedimentSeverity.Severe,
+    );
+    const workout = workoutWith("back_squat", 225);
+    workout.movements.push({
+      movementId: "push_up",
+      movement: getMovementOrThrow("push_up"),
+      reps: 20,
+    });
+
+    try {
+      personaliseWorkout(workout, {
+        sex: Sex.Male,
+        equipment: EQUIPMENT_PRESETS.fullGym,
+        impediments: [
+          {
+            id: "all-muscle-injury",
+            category: ImpedimentCategory.AcuteInjury,
+            severity: ImpedimentSeverity.Severe,
+            affectedMuscles: Object.values(Muscle),
+            affectedJoints: [],
+            description: "No muscular loading is currently safe",
+            startDate: "2026-08-17",
+            constraints,
+          },
+        ],
+      });
+      expect.fail("Expected personalisation to fail closed");
+    } catch (error) {
+      expect(error).toBeInstanceOf(UnableToPersonaliseWorkoutError);
+      expect(
+        (error as UnableToPersonaliseWorkoutError).unresolved.map(
+          ({ movementId }) => movementId,
+        ),
+      ).toEqual(["back_squat", "push_up"]);
+    }
+  });
+
   it("personalises a stored Workout whose Movement objects are not hydrated", () => {
     const workout = workoutWith("back_squat", 225);
     delete workout.movements[0].movement;
