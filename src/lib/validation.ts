@@ -98,7 +98,10 @@ export const onboardingSchema = z.object({
 });
 
 export const gymFloorEntrySchema = z.object({
-  equipment: enumOf(Equipment),
+  equipment: enumOf(Equipment).refine(
+    (equipment) => equipment !== Equipment.None,
+    "Bodyweight is not floor equipment",
+  ),
   stationCount: z.number().int().positive().max(10_000).optional(),
 });
 

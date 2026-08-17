@@ -32,4 +32,13 @@ describe("Gym floor input", () => {
       }),
     ).toThrow();
   });
+
+  it("rejects the internal bodyweight sentinel as floor equipment", () => {
+    expect(() =>
+      gymInputSchema.parse({
+        name: "Iron Ridge",
+        floor: [{ equipment: Equipment.None }],
+      }),
+    ).toThrow();
+  });
 });

@@ -12,28 +12,47 @@ import { createGymForOwner, updateGymForOwner } from "./gym";
 
 const userId = newId("test_user");
 const athleteId = newId("test_ath");
+const outsiderUserId = newId("test_user");
+const outsiderAthleteId = newId("test_ath");
 const workoutId = newId("wod");
 let gymId: string | undefined;
 
 beforeAll(async () => {
-  await db.insert(users).values({
-    id: userId,
-    name: "Gym Owner",
-    email: `${userId}@test.local`,
-  });
-  await db.insert(athletes).values({
-    id: athleteId,
-    userId,
-    name: "Gym Owner",
-    sex: "female",
-    equipment: [Equipment.Dumbbell],
-  });
+  await db.insert(users).values([
+    {
+      id: userId,
+      name: "Gym Owner",
+      email: `${userId}@test.local`,
+    },
+    {
+      id: outsiderUserId,
+      name: "Other Athlete",
+      email: `${outsiderUserId}@test.local`,
+    },
+  ]);
+  await db.insert(athletes).values([
+    {
+      id: athleteId,
+      userId,
+      name: "Gym Owner",
+      sex: "female",
+      equipment: [Equipment.Dumbbell],
+    },
+    {
+      id: outsiderAthleteId,
+      userId: outsiderUserId,
+      name: "Other Athlete",
+      sex: "male",
+      equipment: [],
+    },
+  ]);
 });
 
 afterAll(async () => {
   if (gymId) await db.delete(gyms).where(eq(gyms.id, gymId));
   await db.delete(workouts).where(eq(workouts.id, workoutId));
   await db.delete(users).where(eq(users.id, userId));
+  await db.delete(users).where(eq(users.id, outsiderUserId));
   await pool.end();
 });
 
@@ -76,6 +95,14 @@ describe("Gym floor persistence", () => {
         ]),
       },
     ]);
+
+    expect(await getGymForAthlete(gymId, outsiderAthleteId)).toBeNull();
+    await expect(
+      updateGymForOwner(gymId, outsiderAthleteId, {
+        name: "Hijacked Gym",
+        floor: [{ equipment: Equipment.Barbell, stationCount: 1 }],
+      }),
+    ).rejects.toThrow("Gym not found");
 
     await updateGymForOwner(gymId, athleteId, {
       name: "Iron Ridge CrossFit",
