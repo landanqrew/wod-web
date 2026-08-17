@@ -8,6 +8,8 @@ import {
   gyms,
   impediments,
   loadAdjustments,
+  programmedWorkouts,
+  reservations,
   users,
 } from "../db/schema";
 import { getAssignedWorkoutForAthlete } from "../data/assigned-workout";
@@ -25,6 +27,7 @@ import { newId } from "../ids";
 import { createClassForOwner } from "./gym-class";
 import { createGymForOwner, grantGymMembership } from "./gym";
 import { programGymDay } from "./programmed-workout";
+import { ensureAssignedWorkoutsForAthlete } from "./assigned-workout";
 import {
   cancelReservationForAthlete,
   reserveClassSessionForAthlete,
@@ -41,7 +44,12 @@ const workout: Workout = {
   name: "Personalise me",
   format: WorkoutFormat.Strength,
   movements: [
-    { movementId: "back_squat", reps: 5, rxLoad: { male: 225, female: 155 } },
+    {
+      movementId: "back_squat",
+      reps: 5,
+      rxLoad: { male: 225, female: 155 },
+      notes: "Coach-prescribed tempo",
+    },
     { movementId: "bench_press", reps: 5, rxLoad: { male: 100, female: 80 } },
   ],
   rounds: 5,
@@ -124,12 +132,81 @@ describe("Assigned Workout materialisation", () => {
       startDate: "2027-02-01",
       constraints,
     });
-    await db.insert(loadAdjustments).values({
-      id: newId("load_adjustment"),
+    const expiredConstraints = buildInjuryConstraints(
+      { muscles: [], joints: [Joint.Shoulders] },
+      ImpedimentSeverity.Severe,
+    );
+    await db.insert(impediments).values({
+      id: newId("imp"),
       athleteId: memberAthleteId,
-      movementId: "bench_press",
-      ratio: "0.75",
+      category: ImpedimentCategory.AcuteInjury,
+      severity: ImpedimentSeverity.Severe,
+      affectedMuscles: [],
+      affectedJoints: [Joint.Shoulders],
+      description: "Old shoulder issue",
+      startDate: "2026-01-01",
+      endDate: "2026-02-01",
+      constraints: expiredConstraints,
     });
+    await db.insert(loadAdjustments).values([
+      {
+        id: newId("load_adjustment"),
+        athleteId: memberAthleteId,
+        movementId: "bench_press",
+        ratio: "0.75",
+      },
+      {
+        id: newId("load_adjustment"),
+        athleteId: memberAthleteId,
+        movementId: "bench_press",
+        ratio: "0.25",
+        revokedAt: new Date("2027-01-01T00:00:00Z"),
+      },
+      {
+        id: newId("load_adjustment"),
+        athleteId: memberAthleteId,
+        movementId: "deadlift",
+        ratio: "0.10",
+      },
+    ]);
+
+    const legacyReservationId = newId("reservation");
+    await db.insert(reservations).values({
+      id: legacyReservationId,
+      classSessionId: sessions[0].id,
+      athleteId: memberAthleteId,
+    });
+    await db.insert(programmedWorkouts).values({
+      id: newId("programmed_workout"),
+      classSessionId: sessions[0].id,
+      workout,
+      programmedByAthleteId: ownerAthleteId,
+    });
+    expect(
+      await db
+        .select()
+        .from(assignedWorkouts)
+        .where(eq(assignedWorkouts.reservationId, legacyReservationId)),
+    ).toHaveLength(0);
+    await ensureAssignedWorkoutsForAthlete(memberAthleteId);
+    const [lazyBackfill] = await db
+      .select()
+      .from(assignedWorkouts)
+      .where(eq(assignedWorkouts.reservationId, legacyReservationId));
+    expect(lazyBackfill).toBeDefined();
+    await db
+      .delete(assignedWorkouts)
+      .where(eq(assignedWorkouts.reservationId, legacyReservationId));
+    await expect(
+      reserveClassSessionForAthlete(
+        sessions[0].id,
+        memberAthleteId,
+        beforeSession,
+      ),
+    ).resolves.toBe(legacyReservationId);
+    await expect(
+      getAssignedWorkoutForAthlete(sessions[0].id, memberAthleteId),
+    ).resolves.toMatchObject({ reservationId: legacyReservationId });
 
     await programGymDay(gymId, ownerAthleteId, "2027-03-01", workout);
     const deferred = await getAssignedWorkoutForAthlete(
@@ -140,7 +217,7 @@ describe("Assigned Workout materialisation", () => {
     expect(deferred?.workout.movements[0].movementId).toBe("back_extension");
     expect(deferred?.workout.movements[1].load).toBe(30);
     expect(deferred?.provenance).toMatchObject([
-      { movementId: "adjusted" },
+      { movementId: "adjusted", reps: "programmed", notes: "programmed" },
       { movementId: "programmed", load: "adjusted" },
     ]);
     expect(deferred?.changes.flatMap(({ explanations }) => explanations).join(" "))
@@ -164,6 +241,7 @@ describe("Assigned Workout materialisation", () => {
       memberAthleteId,
       beforeSession,
     );
+    expect(immediateReservationId).toBe(legacyReservationId);
     await expect(
       getAssignedWorkoutForAthlete(sessions[0].id, memberAthleteId),
     ).resolves.toMatchObject({ reservationId: immediateReservationId });

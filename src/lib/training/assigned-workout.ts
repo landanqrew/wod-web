@@ -3,9 +3,13 @@ import { db } from "../db";
 import {
   assignedWorkouts,
   athletes,
+  classSessions,
+  gymClasses,
   gymEquipment,
   impediments,
   loadAdjustments,
+  programmedWorkouts,
+  reservations,
 } from "../db/schema";
 import { rowToAthlete } from "../db/mappers";
 import type { Equipment } from "../domain/models/equipment";
@@ -43,10 +47,15 @@ function provenanceFor(
       "notes",
     ] as const) {
       if (prescription[field] !== undefined) {
-        provenance[field] =
-          substituted || (field === "load" && adjustedLoad)
-            ? "adjusted"
-            : "programmed";
+        if (field === "load") {
+          provenance[field] =
+            substituted || adjustedLoad ? "adjusted" : "programmed";
+        } else {
+          provenance[field] =
+            original?.[field] === prescription[field]
+              ? "programmed"
+              : "adjusted";
+        }
       }
     }
     return provenance;
@@ -167,4 +176,41 @@ export async function materialiseAssignedWorkout(
     .limit(1);
   if (!conflict) throw new Error("Assigned Workout was not materialised");
   return conflict.id;
+}
+
+/** Lazy upgrade reconciliation for Reservations that pre-date Assigned Workouts. */
+export async function ensureAssignedWorkoutsForAthlete(athleteId: string) {
+  await db.transaction(async (tx) => {
+    const missing = await tx
+      .select({
+        reservationId: reservations.id,
+        gymId: gymClasses.gymId,
+        localDate: classSessions.localDate,
+        programmedWorkout: programmedWorkouts.workout,
+      })
+      .from(reservations)
+      .innerJoin(classSessions, eq(classSessions.id, reservations.classSessionId))
+      .innerJoin(gymClasses, eq(gymClasses.id, classSessions.classId))
+      .innerJoin(
+        programmedWorkouts,
+        eq(programmedWorkouts.classSessionId, classSessions.id),
+      )
+      .leftJoin(
+        assignedWorkouts,
+        eq(assignedWorkouts.reservationId, reservations.id),
+      )
+      .where(
+        and(
+          eq(reservations.athleteId, athleteId),
+          isNull(assignedWorkouts.id),
+        ),
+      )
+      .for("update", { of: reservations });
+    for (const row of missing) {
+      await materialiseAssignedWorkout(tx, {
+        ...row,
+        athleteId,
+      });
+    }
+  });
 }

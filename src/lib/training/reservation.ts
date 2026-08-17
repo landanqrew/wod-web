@@ -94,9 +94,25 @@ export async function reserveClassSessionForAthleteInTransaction(
         eq(reservations.classSessionId, classSessionId),
         eq(reservations.athleteId, athleteId),
       ),
-    )
-    .limit(1);
-  if (existing) return existing.id;
+      )
+      .limit(1);
+  if (existing) {
+    const [programmed] = await tx
+      .select({ workout: programmedWorkouts.workout })
+      .from(programmedWorkouts)
+      .where(eq(programmedWorkouts.classSessionId, classSessionId))
+      .limit(1);
+    if (programmed) {
+      await materialiseAssignedWorkout(tx, {
+        reservationId: existing.id,
+        athleteId,
+        gymId: candidate.gymId,
+        localDate: session.localDate,
+        programmedWorkout: programmed.workout,
+      });
+    }
+    return existing.id;
+  }
 
   const [headcount] = await tx
     .select({ value: count() })

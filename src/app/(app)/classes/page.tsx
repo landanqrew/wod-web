@@ -8,11 +8,13 @@ import { getProgrammedWorkoutForSession } from "@/lib/data/programmed-workout";
 import { getAssignedWorkoutForAthlete } from "@/lib/data/assigned-workout";
 import { MembershipRole } from "@/lib/domain/models/gym";
 import { ensureUpcomingClassSessions } from "@/lib/training/gym-class";
+import { ensureAssignedWorkoutsForAthlete } from "@/lib/training/assigned-workout";
 import { ClassesClient } from "./classes-client";
 
 export default async function ClassesPage() {
   const athlete = await requireAthlete();
   await ensureUpcomingClassSessions(athlete.id);
+  await ensureAssignedWorkoutsForAthlete(athlete.id);
   const gyms = await getGymsForAthlete(athlete.id);
   const ownerGyms = gyms.filter(
     ({ membershipRole }) => membershipRole === MembershipRole.Owner,
