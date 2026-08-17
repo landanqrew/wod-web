@@ -1,12 +1,12 @@
 import type { Movement } from "../models/movement";
 import type { Athlete } from "../models/athlete";
-import type { MovementPrescription, Workout } from "../models/workout";
+import type { Workout } from "../models/workout";
 import { WorkoutFormat, ScoreType } from "../models/workout";
 import { Modality, MovementPattern } from "../models/body";
-import { Sex } from "../models/athlete";
 import { getAllMovements } from "../movements/library";
 import { mergeConstraints, filterAllowedMovements } from "../scaling/index";
 import { personaliseWorkout } from "../personalisation/personalise-workout";
+import { createMovementPrescription } from "../personalisation/prescription";
 
 /**
  * Options for generating a workout.
@@ -57,97 +57,6 @@ function pickRandom<T>(arr: T[], n: number): T[] {
     copy.splice(idx, 1);
   }
   return result;
-}
-
-/**
- * Assign default reps/load for a movement prescription based on format.
- */
-function prescribeMovement(
-  movement: Movement,
-  format: WorkoutFormat,
-  sex: Sex
-): MovementPrescription {
-  const prescription: MovementPrescription = {
-    movementId: movement.id,
-    movement,
-  };
-
-  const defaultLoad =
-    sex === Sex.Male ? movement.defaultLoadMale : movement.defaultLoadFemale;
-
-  switch (movement.loadType) {
-    case "bodyweight":
-      prescription.reps = getDefaultReps(format, movement);
-      break;
-    case "weighted":
-      prescription.reps = getDefaultReps(format, movement);
-      prescription.load = defaultLoad;
-      break;
-    case "distance":
-      prescription.distance = getDefaultDistance(format);
-      break;
-    case "calories":
-      prescription.calories = getDefaultCalories(format, sex);
-      break;
-    case "duration":
-      prescription.duration = getDefaultDuration(format);
-      break;
-  }
-
-  return prescription;
-}
-
-function getDefaultReps(format: WorkoutFormat, movement: Movement): number {
-  switch (format) {
-    case WorkoutFormat.AMRAP:
-      return movement.modality === Modality.Weightlifting ? 10 : 15;
-    case WorkoutFormat.EMOM:
-      return movement.modality === Modality.Weightlifting ? 5 : 10;
-    case WorkoutFormat.ForTime:
-    case WorkoutFormat.RoundsForTime:
-      return movement.modality === Modality.Weightlifting ? 10 : 15;
-    case WorkoutFormat.Tabata:
-      return 0; // Tabata is max effort
-    case WorkoutFormat.Strength:
-      return 5;
-    case WorkoutFormat.Chipper:
-      return 30;
-    case WorkoutFormat.Ladder:
-      return 1; // ladders use ascending/descending reps
-    default:
-      return 10;
-  }
-}
-
-function getDefaultDistance(format: WorkoutFormat): number {
-  switch (format) {
-    case WorkoutFormat.AMRAP:
-    case WorkoutFormat.EMOM:
-      return 200; // meters
-    case WorkoutFormat.ForTime:
-    case WorkoutFormat.RoundsForTime:
-      return 400;
-    case WorkoutFormat.Chipper:
-      return 800;
-    default:
-      return 400;
-  }
-}
-
-function getDefaultCalories(format: WorkoutFormat, sex: Sex): number {
-  const base = sex === Sex.Male ? 15 : 12;
-  switch (format) {
-    case WorkoutFormat.EMOM:
-      return Math.round(base * 0.7);
-    case WorkoutFormat.Chipper:
-      return base * 2;
-    default:
-      return base;
-  }
-}
-
-function getDefaultDuration(_format: WorkoutFormat): number {
-  return 30; // seconds
 }
 
 /**
@@ -230,7 +139,7 @@ export function generateWorkout(
 
   // Build prescriptions
   const prescriptions = selected.map((m) =>
-    prescribeMovement(m, options.format, athlete.sex)
+    createMovementPrescription(m, options.format, athlete.sex)
   );
 
   const workout: Workout = {

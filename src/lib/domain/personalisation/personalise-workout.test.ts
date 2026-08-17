@@ -6,10 +6,15 @@ import {
   ImpedimentCategory,
   ImpedimentSeverity,
 } from "../models/impediment";
-import { Joint } from "../models/body";
+import { Joint, Muscle } from "../models/body";
+import { LoadType } from "../models/movement";
 import { ScoreType, WorkoutFormat, type Workout } from "../models/workout";
 import { getMovementOrThrow } from "../movements/library";
-import { personaliseWorkout } from "./personalise-workout";
+import {
+  personaliseWorkout,
+  UnableToPersonaliseWorkoutError,
+} from "./personalise-workout";
+import { createMovementPrescription } from "./prescription";
 
 function workoutWith(movementId: string, load?: number): Workout {
   const movement = getMovementOrThrow(movementId);
@@ -60,6 +65,63 @@ describe("personaliseWorkout", () => {
     expect(result.changes[0].explanations.join(" ")).toContain("knees");
   });
 
+  it("fails closed and explains when no safe substitute exists", () => {
+    const constraints = buildInjuryConstraints(
+      { muscles: Object.values(Muscle), joints: [] },
+      ImpedimentSeverity.Severe,
+    );
+    const workout = workoutWith("back_squat", 225);
+
+    expect(() =>
+      personaliseWorkout(workout, {
+        sex: Sex.Male,
+        equipment: EQUIPMENT_PRESETS.fullGym,
+        impediments: [
+          {
+            id: "all-muscle-injury",
+            category: ImpedimentCategory.AcuteInjury,
+            severity: ImpedimentSeverity.Severe,
+            affectedMuscles: Object.values(Muscle),
+            affectedJoints: [],
+            description: "No muscular loading is currently safe",
+            startDate: "2026-08-17",
+            constraints,
+          },
+        ],
+      }),
+    ).toThrow(UnableToPersonaliseWorkoutError);
+
+    try {
+      personaliseWorkout(workout, {
+        sex: Sex.Male,
+        equipment: EQUIPMENT_PRESETS.fullGym,
+        impediments: [
+          {
+            id: "all-muscle-injury",
+            category: ImpedimentCategory.AcuteInjury,
+            severity: ImpedimentSeverity.Severe,
+            affectedMuscles: Object.values(Muscle),
+            affectedJoints: [],
+            description: "No muscular loading is currently safe",
+            startDate: "2026-08-17",
+            constraints,
+          },
+        ],
+      });
+    } catch (error) {
+      expect(error).toBeInstanceOf(UnableToPersonaliseWorkoutError);
+      expect(
+        (error as UnableToPersonaliseWorkoutError).unresolved[0],
+      ).toMatchObject({
+        movementIndex: 0,
+        movementId: "back_squat",
+      });
+      expect(
+        (error as UnableToPersonaliseWorkoutError).unresolved[0].explanations,
+      ).not.toEqual([]);
+    }
+  });
+
   it("personalises a stored Workout whose Movement objects are not hydrated", () => {
     const workout = workoutWith("back_squat", 225);
     delete workout.movements[0].movement;
@@ -105,8 +167,33 @@ describe("personaliseWorkout", () => {
     );
   });
 
+  it("rebuilds the prescription when a substitution changes load type", () => {
+    const workout = workoutWith("row");
+    workout.movements[0] = {
+      movementId: "row",
+      movement: getMovementOrThrow("row"),
+      calories: 20,
+    };
+
+    const result = personaliseWorkout(workout, {
+      sex: Sex.Male,
+      equipment: EQUIPMENT_PRESETS.bodyweight,
+      impediments: [],
+    });
+
+    expect(result.workout.movements[0]).toMatchObject({
+      movementId: "run",
+      distance: 200,
+    });
+    expect(result.workout.movements[0].calories).toBeUndefined();
+    expect(result.workout.movements[0].reps).toBeUndefined();
+    expect(result.workout.movements[0].load).toBeUndefined();
+    expect(result.workout.movements[0].duration).toBeUndefined();
+  });
+
   it("leaves an unconstrained Athlete's Workout untouched", () => {
     const workout = workoutWith("back_squat", 225);
+    delete workout.movements[0].movement;
     const original = structuredClone(workout);
 
     const result = personaliseWorkout(workout, {
@@ -162,5 +249,29 @@ describe("personaliseWorkout", () => {
     expect(personaliseWorkout(workout, context)).toEqual(
       personaliseWorkout(workout, context),
     );
+  });
+});
+
+describe("createMovementPrescription", () => {
+  it("keeps duration and rep prescriptions mutually exclusive", () => {
+    const bodyweightMovement = getMovementOrThrow("air_squat");
+    const durationMovement = {
+      ...bodyweightMovement,
+      id: "static_hold",
+      loadType: LoadType.Duration,
+    };
+
+    expect(
+      createMovementPrescription(durationMovement, WorkoutFormat.AMRAP, Sex.Male),
+    ).toMatchObject({ duration: 30 });
+    expect(
+      createMovementPrescription(durationMovement, WorkoutFormat.AMRAP, Sex.Male),
+    ).not.toHaveProperty("reps");
+    expect(
+      createMovementPrescription(bodyweightMovement, WorkoutFormat.AMRAP, Sex.Male),
+    ).toMatchObject({ reps: 15 });
+    expect(
+      createMovementPrescription(bodyweightMovement, WorkoutFormat.AMRAP, Sex.Male),
+    ).not.toHaveProperty("duration");
   });
 });
