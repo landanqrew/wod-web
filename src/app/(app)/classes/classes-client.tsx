@@ -50,6 +50,7 @@ type Draft = {
 };
 
 type ProgrammingDraft = {
+  gymId: string;
   sessionId?: string;
   localDate: string;
   workout: Workout;
@@ -162,8 +163,10 @@ export function ClassesClient({
   }
 
   function beginManualProgramming(localDate: string) {
+    if (!selectedGym) return;
     const workout = newManualWorkout();
     setProgrammingDraft({
+      gymId: selectedGym.id,
       localDate,
       workout,
       movementsJson: JSON.stringify(workout.movements, null, 2),
@@ -174,6 +177,7 @@ export function ClassesClient({
     const workout = programmedWorkoutsBySession[session.id];
     if (!workout) return;
     setProgrammingDraft({
+      gymId: session.gymId,
       sessionId: session.id,
       localDate: session.localDate,
       workout,
@@ -188,7 +192,7 @@ export function ClassesClient({
   }
 
   function saveProgrammedWorkout() {
-    if (!programmingDraft || !selectedGym) return;
+    if (!programmingDraft) return;
     startTransition(async () => {
       try {
         const movements = JSON.parse(
@@ -202,7 +206,7 @@ export function ClassesClient({
           );
         } else {
           await programGymDayAction(
-            selectedGym.id,
+            programmingDraft.gymId,
             programmingDraft.localDate,
             workout,
           );
