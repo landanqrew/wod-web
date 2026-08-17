@@ -2,6 +2,10 @@ import "dotenv/config";
 import { readFile } from "node:fs/promises";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
+import { rowToImpediment } from "./mappers";
+import { EQUIPMENT_PRESETS } from "../domain/models/equipment";
+import { getMovementOrThrow } from "../domain/movements/library";
+import { checkMovement } from "../domain/scaling/constraint-engine";
 
 const client = new Client({ connectionString: process.env.DATABASE_URL });
 
@@ -20,13 +24,28 @@ describe("three body-axis migration", () => {
     try {
       await client.query(`
         CREATE TEMP TABLE impediments (
+          id text PRIMARY KEY,
+          athlete_id text NOT NULL,
+          category text NOT NULL,
+          severity text NOT NULL,
           affected_regions jsonb NOT NULL DEFAULT '[]'::jsonb,
-          constraints jsonb NOT NULL
+          description text NOT NULL DEFAULT '',
+          start_date text NOT NULL,
+          end_date text,
+          trimester integer,
+          weeks_postpartum integer,
+          constraints jsonb NOT NULL,
+          created_at timestamp NOT NULL DEFAULT now()
         )
       `);
       await client.query(
-        `INSERT INTO impediments (affected_regions, constraints)
-         VALUES ($1::jsonb, $2::jsonb)`,
+        `INSERT INTO impediments (
+           id, athlete_id, category, severity, affected_regions,
+           description, start_date, constraints
+         ) VALUES (
+           'legacy-shoulder', 'athlete-1', 'acute_injury', 'moderate',
+           $1::jsonb, 'Legacy shoulder injury', '2026-08-01', $2::jsonb
+         )`,
         [
           JSON.stringify([
             "knees",
@@ -68,6 +87,37 @@ describe("three body-axis migration", () => {
           },
         },
       ]);
+
+      const mappedResult = await client.query(
+        `SELECT
+           id,
+           athlete_id AS "athleteId",
+           category,
+           severity,
+           affected_muscles AS "affectedMuscles",
+           affected_joints AS "affectedJoints",
+           description,
+           start_date AS "startDate",
+           end_date AS "endDate",
+           trimester,
+           weeks_postpartum AS "weeksPostpartum",
+           constraints,
+           created_at AS "createdAt"
+         FROM impediments`,
+      );
+      const impediment = rowToImpediment(
+        mappedResult.rows[0] as Parameters<typeof rowToImpediment>[0],
+      );
+
+      expect(impediment.constraints.avoidMuscles).toContain("shoulders");
+      expect(impediment.constraints.avoidJoints).toContain("shoulders");
+      expect(
+        checkMovement(
+          getMovementOrThrow("plank"),
+          impediment.constraints,
+          EQUIPMENT_PRESETS.fullGym,
+        ).allowed,
+      ).toBe(false);
     } finally {
       await client.query("ROLLBACK");
     }

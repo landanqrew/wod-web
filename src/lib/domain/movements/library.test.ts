@@ -43,8 +43,55 @@ describe("movement library", () => {
       Muscle.Glutes,
     ]);
     expect(overheadSquat.secondaryMuscles).toEqual(
-      expect.arrayContaining([Muscle.Shoulders, Muscle.Core, Muscle.UpperBack])
+      expect.arrayContaining([
+        Muscle.Hamstrings,
+        Muscle.Core,
+        Muscle.LowerBack,
+        Muscle.Adductors,
+        Muscle.Shoulders,
+        Muscle.UpperBack,
+      ])
     );
+
+    for (const movementId of [
+      "back_squat",
+      "front_squat",
+      "overhead_squat",
+      "goblet_squat",
+      "dumbbell_squat",
+      "air_squat",
+    ]) {
+      const movement = getMovementOrThrow(movementId);
+      expect(movement.primaryMuscles, movementId).toEqual(
+        expect.arrayContaining([Muscle.Quads, Muscle.Glutes])
+      );
+      expect(movement.secondaryMuscles, movementId).toEqual(
+        expect.arrayContaining([
+          Muscle.Hamstrings,
+          Muscle.Core,
+          Muscle.LowerBack,
+          Muscle.Adductors,
+        ])
+      );
+    }
+
+    for (const movementId of [
+      "snatch",
+      "power_snatch",
+      "hang_snatch",
+      "dumbbell_snatch",
+      "kettlebell_snatch",
+    ]) {
+      const movement = getMovementOrThrow(movementId);
+      expect(movement.primaryMuscles, movementId).not.toContain(
+        Muscle.Shoulders
+      );
+      expect(movement.secondaryMuscles, movementId).toContain(Muscle.Shoulders);
+    }
+
+    expect(
+      getMovementOrThrow("sumo_deadlift_high_pull").primaryMuscles
+    ).toContain(Muscle.Adductors);
 
     const deadlift = getMovementOrThrow("deadlift");
     expect(deadlift.primaryMuscles).not.toContain(Muscle.LowerBack);
