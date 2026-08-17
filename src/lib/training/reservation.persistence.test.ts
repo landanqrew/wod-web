@@ -164,6 +164,31 @@ describe("Class Session Reservations", () => {
       reserveClassSessionForAthlete(session.id, memberAthleteId, beforeSession),
     ).rejects.toThrow("Class Session not found");
 
+    await grantGymMembership(gymId, ownerAthleteId, {
+      email: `${memberUserId}@test.local`,
+      role: MembershipRole.Member,
+    });
+    const [revocation] = await Promise.allSettled([
+      revokeGymMembership(
+        gymId,
+        ownerAthleteId,
+        memberAthleteId,
+        new Date("2027-02-25T00:00:00Z"),
+      ),
+      reserveClassSessionForAthlete(
+        session.id,
+        memberAthleteId,
+        beforeSession,
+      ),
+    ]);
+    expect(revocation.status).toBe("fulfilled");
+    await expect(
+      reserveClassSessionForAthlete(session.id, memberAthleteId, beforeSession),
+    ).rejects.toThrow("Class Session not found");
+    await expect(
+      getClassSessionHeadcount(session.id, coachAthleteId),
+    ).resolves.toBe(0);
+
     await reserveClassSessionForAthlete(
       session.id,
       ownerAthleteId,

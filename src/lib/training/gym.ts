@@ -99,7 +99,8 @@ export async function grantGymMembership(
           eq(memberships.role, MembershipRole.Owner),
         ),
       )
-      .limit(1);
+      .limit(1)
+      .for("update");
     if (!owner) throw new Error("Gym not found");
 
     const [target] = await tx
@@ -119,7 +120,8 @@ export async function grantGymMembership(
           eq(memberships.athleteId, target.athleteId),
         ),
       )
-      .limit(1);
+      .limit(1)
+      .for("update");
     if (existing?.role === MembershipRole.Owner) {
       throw new Error("The Gym owner role cannot be changed");
     }
@@ -184,7 +186,8 @@ export async function revokeGymMembership(
           eq(memberships.role, MembershipRole.Owner),
         ),
       )
-      .limit(1);
+      .limit(1)
+      .for("update");
     if (!owner) throw new Error("Gym not found");
 
     const [target] = await tx
@@ -196,7 +199,8 @@ export async function revokeGymMembership(
           eq(memberships.athleteId, targetAthleteId),
         ),
       )
-      .limit(1);
+      .limit(1)
+      .for("update");
     if (target?.role === MembershipRole.Owner) {
       throw new Error("The Gym owner cannot be removed");
     }

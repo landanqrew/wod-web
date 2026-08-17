@@ -21,9 +21,31 @@ export async function reserveClassSessionForAthlete(
   now: Date = new Date(),
 ) {
   return db.transaction(async (tx) => {
-    const [session] = await tx
+    const [candidate] = await tx
       .select({
         gymId: gymClasses.gymId,
+      })
+      .from(classSessions)
+      .innerJoin(gymClasses, eq(gymClasses.id, classSessions.classId))
+      .where(eq(classSessions.id, classSessionId))
+      .limit(1);
+    if (!candidate) throw new Error("Class Session not found");
+
+    const [membership] = await tx
+      .select({ athleteId: memberships.athleteId })
+      .from(memberships)
+      .where(
+        and(
+          eq(memberships.gymId, candidate.gymId),
+          eq(memberships.athleteId, athleteId),
+        ),
+      )
+      .limit(1)
+      .for("update");
+    if (!membership) throw new Error("Class Session not found");
+
+    const [session] = await tx
+      .select({
         capacity: gymClasses.capacity,
         cancelledAt: classSessions.cancelledAt,
       })
@@ -40,18 +62,6 @@ export async function reserveClassSessionForAthlete(
     if (!session || session.cancelledAt) {
       throw new Error("Class Session not found");
     }
-
-    const [membership] = await tx
-      .select({ athleteId: memberships.athleteId })
-      .from(memberships)
-      .where(
-        and(
-          eq(memberships.gymId, session.gymId),
-          eq(memberships.athleteId, athleteId),
-        ),
-      )
-      .limit(1);
-    if (!membership) throw new Error("Class Session not found");
 
     const [existing] = await tx
       .select({ id: reservations.id })
