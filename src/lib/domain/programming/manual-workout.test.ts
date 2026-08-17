@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { programmedWorkoutSchema } from "../../validation";
+import {
+  generateOptionsSchema,
+  programmedWorkoutSchema,
+} from "../../validation";
 import { WorkoutFormat } from "../models/workout";
 import {
   changeProgrammedWorkoutFormat,
@@ -42,6 +45,12 @@ describe("manual Programmed Workout formats", () => {
       programmedWorkoutSchema.safeParse({
         ...workout,
         format: WorkoutFormat.EMOM,
+      }).success,
+    ).toBe(false);
+    expect(
+      generateOptionsSchema.safeParse({
+        format: WorkoutFormat.AMRAP,
+        rounds: 5,
       }).success,
     ).toBe(false);
   });

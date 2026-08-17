@@ -127,5 +127,12 @@ describe("programWorkout", () => {
       workInterval: 60,
       restInterval: 60,
     });
+    expect(
+      programWorkout(context, {
+        format: WorkoutFormat.AMRAP,
+        rounds: 5,
+        emomMinutes: 12,
+      }),
+    ).toMatchObject({ timeCap: 12, rounds: undefined, emomMinutes: undefined });
   });
 });

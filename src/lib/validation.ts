@@ -107,16 +107,31 @@ export const programmedWorkoutSchema = workoutSchema
     }
   });
 
-export const generateOptionsSchema = z.object({
-  format: enumOf(WorkoutFormat),
-  movementCount: z.number().int().min(1).max(10).optional(),
-  modalities: z.array(enumOf(Modality)).optional(),
-  movementPatterns: z.array(enumOf(MovementPattern)).optional(),
-  timeCap: z.number().int().min(1).max(120).optional(),
-  rounds: z.number().int().min(1).max(50).optional(),
-  emomMinutes: z.number().int().min(1).max(90).optional(),
-  excludeMovements: z.array(z.string()).optional(),
-});
+export const generateOptionsSchema = z
+  .object({
+    format: enumOf(WorkoutFormat),
+    movementCount: z.number().int().min(1).max(10).optional(),
+    modalities: z.array(enumOf(Modality)).optional(),
+    movementPatterns: z.array(enumOf(MovementPattern)).optional(),
+    timeCap: z.number().int().min(1).max(120).optional(),
+    rounds: z.number().int().min(1).max(50).optional(),
+    emomMinutes: z.number().int().min(1).max(90).optional(),
+    excludeMovements: z.array(z.string()).optional(),
+  })
+  .superRefine((options, context) => {
+    const allowed = new Set(
+      programmedFormatFields[options.format as WorkoutFormat] ?? [],
+    );
+    for (const field of ["timeCap", "rounds", "emomMinutes"] as const) {
+      if (!allowed.has(field) && options[field] !== undefined) {
+        context.addIssue({
+          code: "custom",
+          path: [field],
+          message: `${field} does not apply to ${options.format}`,
+        });
+      }
+    }
+  });
 
 export const movementResultSchema = z.object({
   movementId: z.string().min(1),

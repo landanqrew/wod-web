@@ -68,6 +68,21 @@ const FORMAT_DEFAULTS: Record<
   [WorkoutFormat.Ladder]: { movementCount: 2, timeCap: 15 },
 };
 
+const TIME_CAP_FORMATS = new Set<WorkoutFormat>([
+  WorkoutFormat.AMRAP,
+  WorkoutFormat.ForTime,
+  WorkoutFormat.RoundsForTime,
+  WorkoutFormat.Chipper,
+  WorkoutFormat.Ladder,
+]);
+const ROUND_FORMATS = new Set<WorkoutFormat>([
+  WorkoutFormat.EMOM,
+  WorkoutFormat.RoundsForTime,
+  WorkoutFormat.Tabata,
+  WorkoutFormat.Interval,
+  WorkoutFormat.Strength,
+]);
+
 /** Produce a Workout for a floor without using any Athlete data. */
 export function programWorkout(
   context: ProgrammingContext,
@@ -129,9 +144,16 @@ export function programWorkout(
         options.calorieTarget,
       ),
     ),
-    timeCap: options.timeCap ?? defaults.timeCap,
-    rounds: options.rounds ?? defaults.rounds,
-    emomMinutes: options.emomMinutes ?? defaults.emomMinutes,
+    timeCap: TIME_CAP_FORMATS.has(options.format)
+      ? options.timeCap ?? defaults.timeCap
+      : undefined,
+    rounds: ROUND_FORMATS.has(options.format)
+      ? options.rounds ?? defaults.rounds
+      : undefined,
+    emomMinutes:
+      options.format === WorkoutFormat.EMOM
+        ? options.emomMinutes ?? defaults.emomMinutes
+        : undefined,
     workInterval: defaults.workInterval,
     restInterval: defaults.restInterval,
     scoreType: getScoreType(options.format),
