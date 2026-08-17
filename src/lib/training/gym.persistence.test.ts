@@ -3,12 +3,23 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db, pool } from "../db";
 import { athletes, gyms, users, workouts } from "../db/schema";
-import { getGymForAthlete, getGymsForAthlete } from "../data/gym";
+import {
+  getGymForAthlete,
+  getGymMembers,
+  getGymsForAthlete,
+  requireGymPermission,
+} from "../data/gym";
 import { Equipment } from "../domain/models/equipment";
+import { GymPermission, MembershipRole } from "../domain/models/gym";
 import { ScoreType, WorkoutFormat, type Workout } from "../domain/models/workout";
 import { newId } from "../ids";
 import { logResultForAthlete, upsertWorkout } from "./log";
-import { createGymForOwner, updateGymForOwner } from "./gym";
+import {
+  createGymForOwner,
+  grantGymMembership,
+  revokeGymMembership,
+  updateGymForOwner,
+} from "./gym";
 
 const userId = newId("test_user");
 const athleteId = newId("test_ath");
@@ -16,6 +27,7 @@ const outsiderUserId = newId("test_user");
 const outsiderAthleteId = newId("test_ath");
 const workoutId = newId("wod");
 let gymId: string | undefined;
+let outsiderGymId: string | undefined;
 
 beforeAll(async () => {
   await db.insert(users).values([
@@ -50,6 +62,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (gymId) await db.delete(gyms).where(eq(gyms.id, gymId));
+  if (outsiderGymId) await db.delete(gyms).where(eq(gyms.id, outsiderGymId));
   await db.delete(workouts).where(eq(workouts.id, workoutId));
   await db.delete(users).where(eq(users.id, userId));
   await db.delete(users).where(eq(users.id, outsiderUserId));
@@ -88,7 +101,7 @@ describe("Gym floor persistence", () => {
       {
         id: gymId,
         name: "Iron Ridge",
-        ownerAthleteId: athleteId,
+        membershipRole: MembershipRole.Owner,
         floor: expect.arrayContaining([
           { equipment: Equipment.Rower, stationCount: 12 },
           { equipment: Equipment.Barbell },
@@ -104,6 +117,64 @@ describe("Gym floor persistence", () => {
       }),
     ).rejects.toThrow("Gym not found");
 
+    await grantGymMembership(gymId, athleteId, {
+      email: `${outsiderUserId}@test.local`,
+      role: MembershipRole.Coach,
+    });
+    expect(await getGymForAthlete(gymId, outsiderAthleteId)).toMatchObject({
+      id: gymId,
+      membershipRole: MembershipRole.Coach,
+    });
+    await expect(
+      requireGymPermission(
+        gymId,
+        outsiderAthleteId,
+        GymPermission.Program,
+      ),
+    ).resolves.toBe(MembershipRole.Coach);
+    expect(await getGymMembers(gymId, athleteId)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          athleteId: outsiderAthleteId,
+          role: MembershipRole.Coach,
+        }),
+      ]),
+    );
+    await expect(getGymMembers(gymId, outsiderAthleteId)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ athleteId: athleteId }),
+      ]),
+    );
+    await expect(
+      updateGymForOwner(gymId, outsiderAthleteId, {
+        name: "Coach Hijack",
+        floor: [],
+      }),
+    ).rejects.toThrow("Gym not found");
+
+    outsiderGymId = await createGymForOwner(outsiderAthleteId, {
+      name: "Second Gym",
+      floor: [],
+    });
+    expect((await getGymsForAthlete(outsiderAthleteId)).map(({ id }) => id)).toEqual(
+      expect.arrayContaining([gymId, outsiderGymId]),
+    );
+
+    await grantGymMembership(gymId, athleteId, {
+      email: `${outsiderUserId}@test.local`,
+      role: MembershipRole.Member,
+    });
+    await expect(
+      requireGymPermission(
+        gymId,
+        outsiderAthleteId,
+        GymPermission.Program,
+      ),
+    ).rejects.toThrow("Gym not found");
+    await expect(getGymMembers(gymId, outsiderAthleteId)).rejects.toThrow(
+      "Gym not found",
+    );
+
     await updateGymForOwner(gymId, athleteId, {
       name: "Iron Ridge CrossFit",
       floor: [{ equipment: Equipment.Rower, stationCount: 10 }],
@@ -111,9 +182,23 @@ describe("Gym floor persistence", () => {
     expect(await getGymForAthlete(gymId, athleteId)).toEqual({
       id: gymId,
       name: "Iron Ridge CrossFit",
-      ownerAthleteId: athleteId,
+      membershipRole: MembershipRole.Owner,
       floor: [{ equipment: Equipment.Rower, stationCount: 10 }],
     });
+
+    await grantGymMembership(gymId, athleteId, {
+      email: `${outsiderUserId}@test.local`,
+      role: MembershipRole.Coach,
+    });
+    await revokeGymMembership(gymId, athleteId, outsiderAthleteId);
+    expect(await getGymForAthlete(gymId, outsiderAthleteId)).toBeNull();
+    expect(await getGymForAthlete(gymId, athleteId)).toMatchObject({
+      id: gymId,
+      floor: [{ equipment: Equipment.Rower, stationCount: 10 }],
+    });
+    await expect(
+      revokeGymMembership(gymId, athleteId, athleteId),
+    ).rejects.toThrow("owner cannot be removed");
 
     const [storedResult] = await db.query.workoutResults.findMany({
       where: (rows, { eq: equals }) => equals(rows.id, result.id),
