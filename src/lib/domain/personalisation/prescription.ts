@@ -41,6 +41,58 @@ export function createMovementPrescription(
   return prescription;
 }
 
+/** Build an athlete-independent prescription for a Programmed Workout. */
+export function createProgrammedMovementPrescription(
+  movement: Movement,
+  format: WorkoutFormat,
+): MovementPrescription {
+  const prescription: MovementPrescription = {
+    movementId: movement.id,
+    movement,
+  };
+
+  switch (movement.loadType) {
+    case "bodyweight":
+      prescription.reps = getDefaultReps(format, movement);
+      break;
+    case "weighted":
+      prescription.reps = getDefaultReps(format, movement);
+      if (
+        movement.defaultLoadMale !== undefined &&
+        movement.defaultLoadFemale !== undefined
+      ) {
+        prescription.rxLoad = {
+          male: movement.defaultLoadMale,
+          female: movement.defaultLoadFemale,
+        };
+      }
+      break;
+    case "distance":
+      prescription.distance = getDefaultDistance(format);
+      break;
+    case "calories":
+      prescription.calories = getProgrammedCalories(format);
+      break;
+    case "duration":
+      prescription.duration = getDefaultDuration();
+      break;
+  }
+
+  return prescription;
+}
+
+function getProgrammedCalories(format: WorkoutFormat): number {
+  const base = 15;
+  switch (format) {
+    case WorkoutFormat.EMOM:
+      return Math.round(base * 0.7);
+    case WorkoutFormat.Chipper:
+      return base * 2;
+    default:
+      return base;
+  }
+}
+
 function getDefaultReps(format: WorkoutFormat, movement: Movement): number {
   switch (format) {
     case WorkoutFormat.AMRAP:
