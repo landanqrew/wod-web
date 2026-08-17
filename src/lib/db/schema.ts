@@ -221,6 +221,27 @@ export const classSessions = pgTable(
   ],
 );
 
+export const reservations = pgTable(
+  "reservations",
+  {
+    id: text("id").primaryKey(),
+    classSessionId: text("class_session_id")
+      .notNull()
+      .references(() => classSessions.id, { onDelete: "cascade" }),
+    athleteId: text("athlete_id")
+      .notNull()
+      .references(() => athletes.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("reservations_session_athlete_idx").on(
+      t.classSessionId,
+      t.athleteId,
+    ),
+    index("reservations_athlete_idx").on(t.athleteId),
+  ],
+);
+
 export const workoutResults = pgTable(
   "workout_results",
   {

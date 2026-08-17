@@ -23,4 +23,7 @@ export interface ClassSessionSummary {
   coachName: string | null;
   capacity: number;
   cancelled: boolean;
+  reservationCount: number;
+  reserved: boolean;
+  workoutPosted: boolean;
 }
