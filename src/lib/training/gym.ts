@@ -7,6 +7,7 @@ import {
   gymEquipment,
   gyms,
   memberships,
+  reservations,
   users,
 } from "../db/schema";
 import { MembershipRole } from "../domain/models/gym";
@@ -226,6 +227,27 @@ export async function revokeGymMembership(
           );
       }
     }
+
+    await tx
+      .delete(reservations)
+      .where(
+        and(
+          eq(reservations.athleteId, targetAthleteId),
+          inArray(
+            reservations.classSessionId,
+            tx
+              .select({ id: classSessions.id })
+              .from(classSessions)
+              .innerJoin(gymClasses, eq(gymClasses.id, classSessions.classId))
+              .where(
+                and(
+                  eq(gymClasses.gymId, gymId),
+                  gte(classSessions.startsAt, membershipChangedAt),
+                ),
+              ),
+          ),
+        ),
+      );
 
     await tx
       .delete(memberships)

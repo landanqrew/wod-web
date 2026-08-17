@@ -94,9 +94,9 @@ describe("Class Session Reservations", () => {
         timeZone: "America/Chicago",
         capacity: 1,
       },
-      { startDate: "2027-03-01", endDate: "2027-03-01" },
+      { startDate: "2027-02-22", endDate: "2027-03-01" },
     );
-    const [session] = await getClassSessionsForGym(
+    const [historicalSession, session] = await getClassSessionsForGym(
       gymId,
       ownerAthleteId,
       [classId],
@@ -107,21 +107,28 @@ describe("Class Session Reservations", () => {
       getClassSessionHeadcount(session.id, memberAthleteId),
     ).rejects.toThrow("Gym not found");
     await reserveClassSessionForAthlete(
+      historicalSession.id,
+      memberAthleteId,
+      beforeSession,
+    );
+    await reserveClassSessionForAthlete(
       session.id,
       memberAthleteId,
       beforeSession,
     );
     expect(
       await getUpcomingClassSessionsForAthlete(memberAthleteId, beforeSession),
-    ).toEqual([
-      expect.objectContaining({
-        id: session.id,
-        gymName: "Iron Ridge",
-        reserved: true,
-        reservationCount: 1,
-        workoutPosted: false,
-      }),
-    ]);
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: session.id,
+          gymName: "Iron Ridge",
+          reserved: true,
+          reservationCount: 1,
+          workoutPosted: false,
+        }),
+      ]),
+    );
     await expect(
       getClassSessionHeadcount(session.id, coachAthleteId),
     ).resolves.toBe(1);
@@ -136,7 +143,23 @@ describe("Class Session Reservations", () => {
     await expect(
       getClassSessionHeadcount(session.id, coachAthleteId),
     ).resolves.toBe(0);
-    await revokeGymMembership(gymId, ownerAthleteId, memberAthleteId);
+    await reserveClassSessionForAthlete(
+      session.id,
+      memberAthleteId,
+      beforeSession,
+    );
+    await revokeGymMembership(
+      gymId,
+      ownerAthleteId,
+      memberAthleteId,
+      new Date("2027-02-25T00:00:00Z"),
+    );
+    await expect(
+      getClassSessionHeadcount(session.id, coachAthleteId),
+    ).resolves.toBe(0);
+    await expect(
+      getClassSessionHeadcount(historicalSession.id, coachAthleteId),
+    ).resolves.toBe(1);
     await expect(
       reserveClassSessionForAthlete(session.id, memberAthleteId, beforeSession),
     ).rejects.toThrow("Class Session not found");
