@@ -217,7 +217,7 @@ export function buildInjuryConstraints(
   affected: AffectedBodyParts,
   severity: ImpedimentSeverity
 ): MovementConstraint {
-  const affectedNames = [...affected.muscles, ...affected.joints];
+  const affectedNames = [...new Set([...affected.muscles, ...affected.joints])];
 
   switch (severity) {
     case ImpedimentSeverity.Mild:
@@ -246,13 +246,19 @@ export function buildInjuryConstraints(
         allowOverhead:
           !affected.muscles.includes(Muscle.Shoulders) &&
           affected.joints.every(
-            (joint) => ![Joint.Elbows, Joint.Wrists].includes(joint)
+            (joint) =>
+              ![Joint.Shoulders, Joint.Elbows, Joint.Wrists].includes(joint)
           ),
         allowInversion:
           !affected.muscles.includes(Muscle.Shoulders) &&
           affected.joints.every(
             (joint) =>
-              ![Joint.Wrists, Joint.Neck, Joint.Spine].includes(joint)
+              ![
+                Joint.Shoulders,
+                Joint.Wrists,
+                Joint.Neck,
+                Joint.Spine,
+              ].includes(joint)
           ),
         allowProne: !affected.joints.includes(Joint.Spine),
         allowKipping: false,
@@ -269,7 +275,8 @@ export function buildInjuryConstraints(
         allowOverhead:
           !affected.muscles.includes(Muscle.Shoulders) &&
           affected.joints.every(
-            (joint) => ![Joint.Elbows, Joint.Wrists].includes(joint)
+            (joint) =>
+              ![Joint.Shoulders, Joint.Elbows, Joint.Wrists].includes(joint)
           ),
         allowInversion: false,
         allowProne: false,

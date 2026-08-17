@@ -152,6 +152,33 @@ describe("checkMovement", () => {
     }
   });
 
+  it("blocks isometric support through an injured shoulder Joint", () => {
+    const constraints = buildInjuryConstraints(
+      { muscles: [], joints: [Joint.Shoulders] },
+      ImpedimentSeverity.Moderate
+    );
+
+    for (const movementId of ["plank", "front_squat", "pull_up"]) {
+      const result = checkMovement(
+        getMovementOrThrow(movementId),
+        constraints,
+        EQUIPMENT_PRESETS.fullGym
+      );
+
+      expect(result.allowed, movementId).toBe(false);
+    }
+    expect(constraints.allowOverhead).toBe(false);
+
+    const migratedLegacyShoulder = buildInjuryConstraints(
+      {
+        muscles: [Muscle.Shoulders],
+        joints: [Joint.Shoulders],
+      },
+      ImpedimentSeverity.Moderate
+    );
+    expect(migratedLegacyShoulder.notes).not.toContain("shoulders, shoulders");
+  });
+
   it("allows movements that don't stress injured region", () => {
     const constraints = buildInjuryConstraints(
       { muscles: [Muscle.Shoulders], joints: [] },

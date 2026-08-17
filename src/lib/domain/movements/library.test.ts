@@ -7,7 +7,7 @@ import {
   getMovementsByMovementPattern,
   getMovementsByEquipment,
 } from "./library";
-import { Modality, MovementPattern } from "../models/body";
+import { Joint, Modality, MovementPattern, Muscle } from "../models/body";
 import { Equipment } from "../models/equipment";
 
 describe("movement library", () => {
@@ -23,7 +23,7 @@ describe("movement library", () => {
     expect(uniqueIds.size).toBe(ids.length);
   });
 
-  it("every movement has at least one primary region", () => {
+  it("every movement has at least one primary Muscle", () => {
     for (const m of getAllMovements()) {
       expect(m.primaryMuscles.length).toBeGreaterThan(0);
     }
@@ -34,6 +34,29 @@ describe("movement library", () => {
       expect(movement.loadedJoints, movement.name).toBeDefined();
       expect(movement.loadedJoints?.length, movement.name).toBeGreaterThan(0);
     }
+  });
+
+  it("classifies prime movers and isometric loads consistently across families", () => {
+    const overheadSquat = getMovementOrThrow("overhead_squat");
+    expect(overheadSquat.primaryMuscles).toEqual([
+      Muscle.Quads,
+      Muscle.Glutes,
+    ]);
+    expect(overheadSquat.secondaryMuscles).toEqual(
+      expect.arrayContaining([Muscle.Shoulders, Muscle.Core, Muscle.UpperBack])
+    );
+
+    const deadlift = getMovementOrThrow("deadlift");
+    expect(deadlift.primaryMuscles).not.toContain(Muscle.LowerBack);
+    expect(deadlift.secondaryMuscles).toContain(Muscle.LowerBack);
+    expect(deadlift.loadedJoints).toContain(Joint.Elbows);
+
+    expect(getMovementOrThrow("plank").loadedJoints).toEqual(
+      expect.arrayContaining([Joint.Shoulders, Joint.Spine])
+    );
+    expect(getMovementOrThrow("farmers_carry").loadedJoints).toContain(
+      Joint.Elbows
+    );
   });
 
   it("every movement has at least one Movement Pattern", () => {

@@ -13,6 +13,12 @@ question can be answered by an enum that mixes the two.
 Backfilling it across the movement library is domain work, not a mechanical
 rename — someone has to decide which joints each movement loads.
 
+Shoulder deliberately exists on both typed axes. `Muscle.Shoulders` is the
+practical muscle-group label used for training volume; `Joint.Shoulders` is the
+articulation an Impediment protects. Legacy shoulder regions migrate to both so
+the split does not discard either interpretation. The family rules and evidence
+behind the library backfill live in `docs/movement-anatomy.md`.
+
 This fixes a live bug rather than merely tidying names. `constraint-engine.ts`
 blocks a movement when its regions intersect an impediment's `avoidRegions`, but
 no movement in the library declared `Knees` while `impediment.ts` readily

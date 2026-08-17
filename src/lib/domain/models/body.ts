@@ -22,6 +22,7 @@ export enum Muscle {
 
 /** Articulations that a movement loads and an Impediment can protect. */
 export enum Joint {
+  Shoulders = "shoulders",
   Wrists = "wrists",
   Elbows = "elbows",
   Knees = "knees",

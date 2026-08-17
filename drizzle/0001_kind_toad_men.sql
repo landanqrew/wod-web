@@ -18,7 +18,7 @@ SET
     (
       SELECT jsonb_agg(region)
       FROM jsonb_array_elements_text("affected_regions") AS parts(region)
-      WHERE region IN ('wrists', 'elbows', 'knees', 'ankles', 'hips', 'spine', 'neck')
+      WHERE region IN ('shoulders', 'wrists', 'elbows', 'knees', 'ankles', 'hips', 'spine', 'neck')
     ),
     '[]'::jsonb
   ),
@@ -41,7 +41,7 @@ SET
       (
         SELECT jsonb_agg(region)
         FROM jsonb_array_elements_text(COALESCE("constraints"->'avoidRegions', '[]'::jsonb)) AS parts(region)
-        WHERE region IN ('wrists', 'elbows', 'knees', 'ankles', 'hips', 'spine', 'neck')
+        WHERE region IN ('shoulders', 'wrists', 'elbows', 'knees', 'ankles', 'hips', 'spine', 'neck')
       ),
       '[]'::jsonb
     )

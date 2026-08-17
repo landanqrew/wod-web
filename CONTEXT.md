@@ -32,9 +32,11 @@ The axis volume tracking and Recovery Windows are measured on.
 _Avoid_: Body region, muscle group (ambiguous — see Movement Pattern)
 
 **Joint**:
-An articulation a movement loads — knee, wrist, elbow, spine. The axis most
+An articulation a movement loads — shoulder, knee, wrist, elbow, spine. The axis most
 Impediments are declared on. Distinct from Muscle: a bad knee is not a bad quad,
-and a movement can hammer a joint it barely muscles.
+and a movement can hammer a joint it barely muscles. Shoulder intentionally
+appears on both axes: shoulder musculature can be trained while the shoulder
+articulation independently bears load.
 _Avoid_: Body region
 
 **Movement Pattern**:

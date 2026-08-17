@@ -28,7 +28,12 @@ describe("three body-axis migration", () => {
         `INSERT INTO impediments (affected_regions, constraints)
          VALUES ($1::jsonb, $2::jsonb)`,
         [
-          JSON.stringify(["knees", "quads", "unknown_legacy_value"]),
+          JSON.stringify([
+            "knees",
+            "quads",
+            "shoulders",
+            "unknown_legacy_value",
+          ]),
           JSON.stringify({
             avoidRegions: ["wrists", "shoulders", "unknown_legacy_value"],
             allowHighImpact: false,
@@ -54,12 +59,12 @@ describe("three body-axis migration", () => {
 
       expect(result.rows).toEqual([
         {
-          affected_muscles: ["quads"],
-          affected_joints: ["knees"],
+          affected_muscles: ["quads", "shoulders"],
+          affected_joints: ["knees", "shoulders"],
           constraints: {
             allowHighImpact: false,
             avoidMuscles: ["shoulders"],
-            avoidJoints: ["wrists"],
+            avoidJoints: ["wrists", "shoulders"],
           },
         },
       ]);

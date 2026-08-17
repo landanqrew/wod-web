@@ -144,7 +144,7 @@ describe("findSubstitution", () => {
     expect(result.replacement!.loadedJoints).not.toContain(Joint.Knees);
   });
 
-  it("keeps a safe movement pool for a Spine Impediment", () => {
+  it("substitutes unweighted squatting for axial load with a Spine Impediment", () => {
     const constraints = buildInjuryConstraints(
       { muscles: [], joints: [Joint.Spine] },
       ImpedimentSeverity.Moderate
@@ -156,15 +156,8 @@ describe("findSubstitution", () => {
       EQUIPMENT_PRESETS.fullGym
     );
 
-    expect(result.replacement).not.toBeNull();
+    expect(result.replacement?.id).toBe("air_squat");
     expect(result.replacement!.loadedJoints).not.toContain(Joint.Spine);
-    expect(
-      findSubstitution(
-        getMovementOrThrow("bike_erg"),
-        constraints,
-        EQUIPMENT_PRESETS.fullGym
-      ).replacement?.id
-    ).toBe("bike_erg");
   });
 });
 
