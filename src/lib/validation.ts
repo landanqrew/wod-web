@@ -124,6 +124,33 @@ export const membershipGrantSchema = z.object({
   role: z.enum([MembershipRole.Coach, MembershipRole.Member]),
 });
 
+const weeklyClassTimeSchema = z.object({
+  dayOfWeek: z.number().int().min(0).max(6),
+  localTime: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/),
+});
+
+export const gymClassInputSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  coachAthleteId: z.string().min(1),
+  weeklyTimes: z
+    .array(weeklyClassTimeSchema)
+    .min(1)
+    .max(7)
+    .refine(
+      (times) => new Set(times.map(({ dayOfWeek }) => dayOfWeek)).size === times.length,
+      "A Class can meet only once per weekday",
+    ),
+  timeZone: z.string().refine((timeZone) => {
+    try {
+      new Intl.DateTimeFormat("en-US", { timeZone }).format();
+      return true;
+    } catch {
+      return false;
+    }
+  }, "Use a valid IANA time zone"),
+  capacity: z.number().int().positive().max(10_000),
+});
+
 export const sessionBlockSchema = z.object({
   type: enumOf(SessionBlockType),
   durationMinutes: z.number().int().positive().max(180),
@@ -144,3 +171,4 @@ export type GenerateOptionsInput = z.infer<typeof generateOptionsSchema>;
 export type SaveSessionInput = z.infer<typeof saveSessionSchema>;
 export type GymInput = z.infer<typeof gymInputSchema>;
 export type MembershipGrantInput = z.infer<typeof membershipGrantSchema>;
+export type GymClassInput = z.infer<typeof gymClassInputSchema>;

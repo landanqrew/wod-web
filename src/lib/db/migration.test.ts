@@ -182,3 +182,57 @@ describe("Gym Membership migration", () => {
     }
   });
 });
+
+describe("Class Session snapshot migration", () => {
+  it("backfills historical timezone and coach attribution", async () => {
+    await client.query("BEGIN");
+
+    try {
+      await client.query(`
+        CREATE SCHEMA issue_14_migration;
+        SET LOCAL search_path TO issue_14_migration;
+        CREATE TABLE athletes (id text PRIMARY KEY);
+        CREATE TABLE classes (
+          id text PRIMARY KEY,
+          coach_athlete_id text,
+          time_zone text NOT NULL
+        );
+        CREATE TABLE class_sessions (
+          id text PRIMARY KEY,
+          class_id text NOT NULL,
+          local_date text NOT NULL,
+          starts_at timestamp with time zone NOT NULL,
+          cancelled_at timestamp with time zone,
+          created_at timestamp NOT NULL DEFAULT now()
+        );
+        INSERT INTO athletes (id) VALUES ('historical-coach');
+        INSERT INTO classes (id, coach_athlete_id, time_zone)
+        VALUES ('class-1', 'historical-coach', 'America/Chicago');
+        INSERT INTO class_sessions (id, class_id, local_date, starts_at)
+        VALUES ('session-1', 'class-1', '2026-03-01', '2026-03-01T12:00:00Z');
+      `);
+
+      const migration = (
+        await readFile(
+          new URL("../../../drizzle/0006_same_firebird.sql", import.meta.url),
+          "utf8",
+        )
+      ).replaceAll('"public".', '"issue_14_migration".');
+      for (const statement of migration.split("--> statement-breakpoint")) {
+        if (statement.trim()) await client.query(statement);
+      }
+
+      const snapshots = await client.query(
+        `SELECT coach_athlete_id, time_zone FROM class_sessions`,
+      );
+      expect(snapshots.rows).toEqual([
+        {
+          coach_athlete_id: "historical-coach",
+          time_zone: "America/Chicago",
+        },
+      ]);
+    } finally {
+      await client.query("ROLLBACK");
+    }
+  });
+});

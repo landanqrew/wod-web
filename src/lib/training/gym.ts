@@ -1,6 +1,14 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, sql } from "drizzle-orm";
 import { db } from "../db";
-import { athletes, gymEquipment, gyms, memberships, users } from "../db/schema";
+import {
+  athletes,
+  classSessions,
+  gymClasses,
+  gymEquipment,
+  gyms,
+  memberships,
+  users,
+} from "../db/schema";
 import { MembershipRole } from "../domain/models/gym";
 import { newId } from "../ids";
 import { gymInputSchema, membershipGrantSchema } from "../validation";
@@ -75,6 +83,7 @@ export async function grantGymMembership(
   gymId: string,
   ownerAthleteId: string,
   raw: unknown,
+  membershipChangedAt: Date = new Date(),
 ) {
   const input = membershipGrantSchema.parse(raw);
 
@@ -114,6 +123,33 @@ export async function grantGymMembership(
       throw new Error("The Gym owner role cannot be changed");
     }
 
+    if (existing?.role === MembershipRole.Coach && input.role !== MembershipRole.Coach) {
+      const clearedClasses = await tx
+        .update(gymClasses)
+        .set({ coachAthleteId: null, updatedAt: new Date() })
+        .where(
+          and(
+            eq(gymClasses.gymId, gymId),
+            eq(gymClasses.coachAthleteId, target.athleteId),
+          ),
+        )
+        .returning({ id: gymClasses.id });
+      if (clearedClasses.length > 0) {
+        await tx
+          .update(classSessions)
+          .set({ coachAthleteId: null })
+          .where(
+            and(
+              inArray(
+                classSessions.classId,
+                clearedClasses.map(({ id }) => id),
+              ),
+              gte(classSessions.startsAt, membershipChangedAt),
+            ),
+          );
+      }
+    }
+
     await tx
       .insert(memberships)
       .values({
@@ -134,6 +170,7 @@ export async function revokeGymMembership(
   gymId: string,
   ownerAthleteId: string,
   targetAthleteId: string,
+  membershipChangedAt: Date = new Date(),
 ) {
   await db.transaction(async (tx) => {
     const [owner] = await tx
@@ -161,6 +198,33 @@ export async function revokeGymMembership(
       .limit(1);
     if (target?.role === MembershipRole.Owner) {
       throw new Error("The Gym owner cannot be removed");
+    }
+
+    if (target?.role === MembershipRole.Coach) {
+      const clearedClasses = await tx
+        .update(gymClasses)
+        .set({ coachAthleteId: null, updatedAt: new Date() })
+        .where(
+          and(
+            eq(gymClasses.gymId, gymId),
+            eq(gymClasses.coachAthleteId, targetAthleteId),
+          ),
+        )
+        .returning({ id: gymClasses.id });
+      if (clearedClasses.length > 0) {
+        await tx
+          .update(classSessions)
+          .set({ coachAthleteId: null })
+          .where(
+            and(
+              inArray(
+                classSessions.classId,
+                clearedClasses.map(({ id }) => id),
+              ),
+              gte(classSessions.startsAt, membershipChangedAt),
+            ),
+          );
+      }
     }
 
     await tx
