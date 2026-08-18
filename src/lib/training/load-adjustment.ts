@@ -22,6 +22,18 @@ import { promoteLoadAdjustmentSchema } from "../validation";
 import { reconcileAssignedWorkoutsForAthleteInTransaction } from "./assigned-workout";
 
 type PromotionInput = z.infer<typeof promoteLoadAdjustmentSchema>;
+type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+async function lockAthlete(tx: Transaction, athleteId: string) {
+  const [athlete] = await tx
+    .select({ sex: athletes.sex })
+    .from(athletes)
+    .where(eq(athletes.id, athleteId))
+    .limit(1)
+    .for("update");
+  if (!athlete) throw new Error("Athlete not found");
+  return athlete;
+}
 
 export interface LoadAdjustmentOffer {
   movementId: string;
@@ -77,14 +89,14 @@ export async function promoteLoadAdjustmentForAthlete(
   if (input.reason === "injury") return { status: "impediment_required" };
 
   return db.transaction(async (tx) => {
+    const athlete = await lockAthlete(tx, athleteId);
     const [row] = await tx
-      .select({ assigned: assignedWorkouts, sex: athletes.sex })
+      .select({ assigned: assignedWorkouts })
       .from(assignedWorkouts)
       .innerJoin(
         reservations,
         eq(reservations.id, assignedWorkouts.reservationId),
       )
-      .innerJoin(athletes, eq(athletes.id, reservations.athleteId))
       .where(
         and(
           eq(reservations.classSessionId, input.classSessionId),
@@ -101,7 +113,7 @@ export async function promoteLoadAdjustmentForAthlete(
     const offer = loadAdjustmentOffer(
       prescription.movementId,
       prescription.load ?? 0,
-      row.sex as Sex,
+      athlete.sex as Sex,
     );
     if (!offer) {
       throw new Error("This load Override cannot become a Load Adjustment");
@@ -136,6 +148,7 @@ export async function revokeLoadAdjustmentForAthlete(
   adjustmentId: string,
 ): Promise<void> {
   await db.transaction(async (tx) => {
+    await lockAthlete(tx, athleteId);
     const [revoked] = await tx
       .update(loadAdjustments)
       .set({ revokedAt: new Date() })
