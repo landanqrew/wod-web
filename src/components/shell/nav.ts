@@ -5,6 +5,7 @@ export const NAV_ITEMS = [
   { href: "/movements", label: "Movements", icon: "barbell" },
   { href: "/benchmarks", label: "Benchmarks", icon: "trophy" },
   { href: "/progress", label: "Progress", icon: "chart" },
+  { href: "/adjustments", label: "Adjustments", icon: "barbell" },
   { href: "/insights", label: "Insights", icon: "info" },
   { href: "/programs", label: "Programs", icon: "calendar" },
   { href: "/gyms", label: "Gyms", icon: "building" },
