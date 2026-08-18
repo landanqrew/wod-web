@@ -13,8 +13,16 @@ export async function reserveClassSessionAction(classSessionId: string) {
   revalidatePath("/classes");
 }
 
-export async function cancelReservationAction(classSessionId: string) {
+export async function cancelReservationAction(
+  classSessionId: string,
+  discardAssignedWorkout = false,
+) {
   const athlete = await requireAthlete();
-  await cancelReservationForAthlete(classSessionId, athlete.id);
+  const result = await cancelReservationForAthlete(
+    classSessionId,
+    athlete.id,
+    discardAssignedWorkout,
+  );
   revalidatePath("/classes");
+  return result;
 }

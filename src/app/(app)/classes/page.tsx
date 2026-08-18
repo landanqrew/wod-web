@@ -5,13 +5,16 @@ import {
 } from "@/lib/data/gym-class";
 import { getGymMembers, getGymsForAthlete } from "@/lib/data/gym";
 import { getProgrammedWorkoutForSession } from "@/lib/data/programmed-workout";
+import { getAssignedWorkoutForAthlete } from "@/lib/data/assigned-workout";
 import { MembershipRole } from "@/lib/domain/models/gym";
 import { ensureUpcomingClassSessions } from "@/lib/training/gym-class";
+import { ensureAssignedWorkoutsForAthlete } from "@/lib/training/assigned-workout";
 import { ClassesClient } from "./classes-client";
 
 export default async function ClassesPage() {
   const athlete = await requireAthlete();
   await ensureUpcomingClassSessions(athlete.id);
+  await ensureAssignedWorkoutsForAthlete(athlete.id);
   const gyms = await getGymsForAthlete(athlete.id);
   const ownerGyms = gyms.filter(
     ({ membershipRole }) => membershipRole === MembershipRole.Owner,
@@ -45,12 +48,21 @@ export default async function ClassesPage() {
         (await getProgrammedWorkoutForSession(session.id, athlete.id))?.workout,
       ] as const),
   );
+  const assignedWorkouts = await Promise.all(
+    upcomingSessions
+      .filter(({ reserved }) => reserved)
+      .map(async (session) => [
+        session.id,
+        await getAssignedWorkoutForAthlete(session.id, athlete.id),
+      ] as const),
+  );
 
   return (
     <ClassesClient
       gyms={gyms}
       upcomingSessions={upcomingSessions}
       programmedWorkoutsBySession={Object.fromEntries(programmedWorkouts)}
+      assignedWorkoutsBySession={Object.fromEntries(assignedWorkouts)}
       classesByGym={Object.fromEntries(
         ownerData.map(({ gymId, classes }) => [gymId, classes]),
       )}
