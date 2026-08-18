@@ -58,6 +58,7 @@ export default async function ClassesPage() {
         await getAssignedWorkoutForAthlete(session.id, athlete.id),
       ] as const),
   );
+  const assignedWorkoutsBySession = Object.fromEntries(assignedWorkouts);
   const movementOptionsBySession = Object.fromEntries(
     upcomingSessions.map((session) => {
       const floor = new Set(
@@ -71,11 +72,25 @@ export default async function ClassesPage() {
           (endDate === undefined || endDate >= session.localDate),
       );
       const constraints = mergeConstraints(activeImpediments);
+      const assignedMovementIds = new Set(
+        assignedWorkoutsBySession[session.id]?.workout.movements.map(
+          ({ movementId }) => movementId,
+        ) ?? [],
+      );
       return [
         session.id,
         getAllMovements()
-          .filter((movement) => checkMovement(movement, constraints, floor).allowed)
-          .map(({ id, name, loadType }) => ({ id, name, loadType })),
+          .map((movement) => ({
+            ...movement,
+            available: checkMovement(movement, constraints, floor).allowed,
+          }))
+          .filter(({ id, available }) => available || assignedMovementIds.has(id))
+          .map(({ id, name, loadType, available }) => ({
+            id,
+            name,
+            loadType,
+            available,
+          })),
       ];
     }),
   );
@@ -85,7 +100,7 @@ export default async function ClassesPage() {
       gyms={gyms}
       upcomingSessions={upcomingSessions}
       programmedWorkoutsBySession={Object.fromEntries(programmedWorkouts)}
-      assignedWorkoutsBySession={Object.fromEntries(assignedWorkouts)}
+      assignedWorkoutsBySession={assignedWorkoutsBySession}
       classesByGym={Object.fromEntries(
         ownerData.map(({ gymId, classes }) => [gymId, classes]),
       )}

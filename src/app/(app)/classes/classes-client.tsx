@@ -102,7 +102,7 @@ export function ClassesClient({
   coachesByGym: Record<string, GymMember[]>;
   movementOptionsBySession: Record<
     string,
-    Array<{ id: string; name: string; loadType: string }>
+    Array<{ id: string; name: string; loadType: string; available: boolean }>
   >;
 }) {
   const router = useRouter();
@@ -817,8 +817,13 @@ export function ClassesClient({
                       }
                     >
                       {(movementOptionsBySession[session.id] ?? []).map((movement) => (
-                        <option key={movement.id} value={movement.id}>
+                        <option
+                          key={movement.id}
+                          value={movement.id}
+                          disabled={!movement.available}
+                        >
                           {movement.name}
+                          {movement.available ? "" : " (unavailable)"}
                         </option>
                       ))}
                     </Select>
