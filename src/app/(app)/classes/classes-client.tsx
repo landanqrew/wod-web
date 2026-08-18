@@ -26,6 +26,7 @@ import {
   programGymDayAction,
   updateSessionProgrammedWorkoutAction,
 } from "@/lib/actions/programmed-workout";
+import { overrideAssignedWorkoutAction } from "@/lib/actions/assigned-workout";
 import { MembershipRole, type Gym, type GymMember } from "@/lib/domain/models/gym";
 import type { AssignedWorkout } from "@/lib/domain/models/assigned-workout";
 import type { ClassSessionSummary, GymClass } from "@/lib/domain/models/gym-class";
@@ -69,6 +70,21 @@ type ProgrammingNumberField =
   | "restInterval"
   | "emomMinutes";
 
+type OverrideDraft = {
+  sessionId: string;
+  movementIndex: number;
+  movementId: string;
+  reps: string;
+  load: string;
+  duration: string;
+  initial: {
+    movementId: string;
+    reps: string;
+    load: string;
+    duration: string;
+  };
+};
+
 export function ClassesClient({
   gyms,
   upcomingSessions,
@@ -76,6 +92,7 @@ export function ClassesClient({
   assignedWorkoutsBySession,
   classesByGym,
   coachesByGym,
+  movementOptionsBySession,
 }: {
   gyms: Gym[];
   upcomingSessions: ClassSessionSummary[];
@@ -83,6 +100,10 @@ export function ClassesClient({
   assignedWorkoutsBySession: Record<string, AssignedWorkout | null>;
   classesByGym: Record<string, GymClass[]>;
   coachesByGym: Record<string, GymMember[]>;
+  movementOptionsBySession: Record<
+    string,
+    Array<{ id: string; name: string; loadType: string; available: boolean }>
+  >;
 }) {
   const router = useRouter();
   const ownerGyms = gyms.filter(
@@ -93,6 +114,9 @@ export function ClassesClient({
   const [programmingDraft, setProgrammingDraft] =
     React.useState<ProgrammingDraft | null>(null);
   const [programmingDate, setProgrammingDate] = React.useState("");
+  const [overrideDraft, setOverrideDraft] = React.useState<OverrideDraft | null>(
+    null,
+  );
   const [pending, startTransition] = React.useTransition();
   const selectedGym = gyms.find(({ id }) => id === selectedGymId) ?? gyms[0];
 
@@ -270,6 +294,66 @@ export function ClassesClient({
         toast.error("Could not generate a Programmed Workout for that day.");
       }
     });
+  }
+
+  function beginOverride(
+    sessionId: string,
+    movementIndex: number,
+    prescription: MovementPrescription,
+  ) {
+    const initial = {
+      movementId: prescription.movementId,
+      reps: prescription.reps?.toString() ?? "",
+      load: prescription.load?.toString() ?? "",
+      duration: prescription.duration?.toString() ?? "",
+    };
+    setOverrideDraft({
+      sessionId,
+      movementIndex,
+      ...initial,
+      initial,
+    });
+  }
+
+  function saveOverride() {
+    if (!overrideDraft) return;
+    startTransition(async () => {
+      try {
+        const changedNumber = (
+          field: "reps" | "load" | "duration",
+        ) =>
+          overrideDraft[field] === "" ||
+          overrideDraft[field] === overrideDraft.initial[field]
+            ? undefined
+            : Number(overrideDraft[field]);
+        await overrideAssignedWorkoutAction(overrideDraft.sessionId, {
+          movementIndex: overrideDraft.movementIndex,
+          movementId:
+            overrideDraft.movementId === overrideDraft.initial.movementId
+              ? undefined
+              : overrideDraft.movementId,
+          reps: changedNumber("reps"),
+          load: changedNumber("load"),
+          duration: changedNumber("duration"),
+        });
+        toast.success("Assigned Workout updated");
+        setOverrideDraft(null);
+        router.refresh();
+      } catch {
+        toast.error("Could not apply that override. Check the Movement and Gym floor.");
+      }
+    });
+  }
+
+  function supportsOverrideField(field: "reps" | "load" | "duration") {
+    if (!overrideDraft) return false;
+    const loadType = movementOptionsBySession[overrideDraft.sessionId]?.find(
+      ({ id }) => id === overrideDraft.movementId,
+    )?.loadType;
+    if (field === "reps") {
+      return loadType === "weighted" || loadType === "bodyweight";
+    }
+    return loadType === field;
   }
 
   function toggleDay(dayOfWeek: number) {
@@ -679,11 +763,29 @@ export function ClassesClient({
               {assignedWorkoutsBySession[session.id] ? (
                 <div className="rounded-xl border border-primary/30 bg-primary/5 p-3">
                   <p className="text-sm font-semibold">Your Assigned Workout</p>
-                  <p className="mt-1 text-xs text-subtle">
-                    {assignedWorkoutsBySession[session.id]?.workout.movements
-                      .map(prescriptionLine)
-                      .join(" · ")}
-                  </p>
+                  <div className="mt-2 space-y-2">
+                    {assignedWorkoutsBySession[session.id]?.workout.movements.map(
+                      (prescription, movementIndex) => (
+                        <div
+                          key={`${movementIndex}-${prescription.movementId}`}
+                          className="flex items-center justify-between gap-2 text-xs"
+                        >
+                          <span className="text-subtle">
+                            {prescriptionLine(prescription)}
+                          </span>
+                          <Button
+                            size="sm"
+                            disabled={pending}
+                            onClick={() =>
+                              beginOverride(session.id, movementIndex, prescription)
+                            }
+                          >
+                            Edit
+                          </Button>
+                        </div>
+                      ),
+                    )}
+                  </div>
                   {(assignedWorkoutsBySession[session.id]?.changes.length ?? 0) > 0 ? (
                     <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-subtle">
                       {assignedWorkoutsBySession[session.id]?.changes.map((change) => (
@@ -697,6 +799,60 @@ export function ClassesClient({
                       Matches the programmed version after Rx resolution.
                     </p>
                   )}
+                </div>
+              ) : null}
+              {overrideDraft?.sessionId === session.id ? (
+                <div className="grid gap-2 rounded-xl border border-border p-3 sm:grid-cols-2">
+                  <FieldRow label="Movement">
+                    <Select
+                      value={overrideDraft.movementId}
+                      onChange={(event) =>
+                        setOverrideDraft({
+                          ...overrideDraft,
+                          movementId: event.target.value,
+                          reps: "",
+                          load: "",
+                          duration: "",
+                        })
+                      }
+                    >
+                      {(movementOptionsBySession[session.id] ?? []).map((movement) => (
+                        <option
+                          key={movement.id}
+                          value={movement.id}
+                          disabled={!movement.available}
+                        >
+                          {movement.name}
+                          {movement.available ? "" : " (unavailable)"}
+                        </option>
+                      ))}
+                    </Select>
+                  </FieldRow>
+                  {(["reps", "load", "duration"] as const)
+                    .filter(supportsOverrideField)
+                    .map((field) => (
+                    <FieldRow key={field} label={formatLabel(field)}>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={overrideDraft[field]}
+                        onChange={(event) =>
+                          setOverrideDraft({
+                            ...overrideDraft,
+                            [field]: event.target.value,
+                          })
+                        }
+                      />
+                    </FieldRow>
+                    ))}
+                  <div className="flex gap-2 sm:col-span-2">
+                    <Button variant="primary" disabled={pending} onClick={saveOverride}>
+                      Apply override
+                    </Button>
+                    <Button disabled={pending} onClick={() => setOverrideDraft(null)}>
+                      Cancel
+                    </Button>
+                  </div>
                 </div>
               ) : null}
               <p className="text-xs text-subtle">

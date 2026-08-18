@@ -1,3 +1,4 @@
+import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { athletes, impediments } from "@/lib/db/schema";
 import { newId } from "@/lib/ids";
@@ -12,6 +13,7 @@ import {
 } from "@/lib/domain/models/impediment";
 import type { Joint, Muscle } from "@/lib/domain/models/body";
 import type { z } from "zod";
+import { reconcileAssignedWorkoutsForAthleteInTransaction } from "./assigned-workout";
 
 export type ImpedimentInput = z.infer<typeof impedimentInputSchema>;
 
@@ -75,5 +77,25 @@ export async function createAthleteProfile(userId: string, raw: unknown): Promis
 
 export async function addImpedimentFor(athleteId: string, raw: unknown): Promise<void> {
   const input = impedimentInputSchema.parse(raw);
-  await db.insert(impediments).values(impedimentRow(athleteId, input));
+  await db.transaction(async (tx) => {
+    await tx.insert(impediments).values(impedimentRow(athleteId, input));
+    await reconcileAssignedWorkoutsForAthleteInTransaction(tx, athleteId);
+  });
+}
+
+export async function removeImpedimentFor(
+  athleteId: string,
+  impedimentId: string,
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(impediments)
+      .where(
+        and(
+          eq(impediments.id, impedimentId),
+          eq(impediments.athleteId, athleteId),
+        ),
+      );
+    await reconcileAssignedWorkoutsForAthleteInTransaction(tx, athleteId);
+  });
 }

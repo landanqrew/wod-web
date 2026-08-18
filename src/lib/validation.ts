@@ -23,6 +23,23 @@ export const prescriptionSchema = z.object({
   notes: z.string().max(400).optional(),
 });
 
+export const assignedWorkoutOverrideSchema = z
+  .object({
+    movementIndex: z.number().int().nonnegative().max(19),
+    movementId: z.string().min(1).optional(),
+    reps: z.number().int().nonnegative().max(10_000).optional(),
+    load: z.number().nonnegative().max(2_000).optional(),
+    duration: z.number().int().nonnegative().max(86_400).optional(),
+  })
+  .refine(
+    ({ movementId, reps, load, duration }) =>
+      movementId !== undefined ||
+      reps !== undefined ||
+      load !== undefined ||
+      duration !== undefined,
+    { message: "At least one override is required" },
+  );
+
 export const workoutSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1).max(120),

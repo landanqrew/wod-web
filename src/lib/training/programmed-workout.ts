@@ -194,7 +194,7 @@ export async function updateProgrammedWorkoutForSession(
     );
     const workout = parseProgrammedWorkout(rawWorkout);
     const [session] = await tx
-      .select({ id: classSessions.id })
+      .select({ id: classSessions.id, localDate: classSessions.localDate })
       .from(classSessions)
       .innerJoin(gymClasses, eq(gymClasses.id, classSessions.classId))
       .where(
@@ -213,5 +213,18 @@ export async function updateProgrammedWorkoutForSession(
       .where(eq(programmedWorkouts.classSessionId, classSessionId))
       .returning({ id: programmedWorkouts.id });
     if (!updated) throw new Error("Programmed Workout not found");
+    const sessionReservations = await tx
+      .select({ id: reservations.id, athleteId: reservations.athleteId })
+      .from(reservations)
+      .where(eq(reservations.classSessionId, classSessionId));
+    for (const reservation of sessionReservations) {
+      await materialiseAssignedWorkout(tx, {
+        reservationId: reservation.id,
+        athleteId: reservation.athleteId,
+        gymId: candidate.gymId,
+        localDate: session.localDate,
+        programmedWorkout: workout,
+      });
+    }
   });
 }

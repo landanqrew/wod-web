@@ -7,6 +7,8 @@ import { getGymMembers, getGymsForAthlete } from "@/lib/data/gym";
 import { getProgrammedWorkoutForSession } from "@/lib/data/programmed-workout";
 import { getAssignedWorkoutForAthlete } from "@/lib/data/assigned-workout";
 import { MembershipRole } from "@/lib/domain/models/gym";
+import { getAllMovements } from "@/lib/domain/movements/library";
+import { checkMovement, mergeConstraints } from "@/lib/domain/scaling/constraint-engine";
 import { ensureUpcomingClassSessions } from "@/lib/training/gym-class";
 import { ensureAssignedWorkoutsForAthlete } from "@/lib/training/assigned-workout";
 import { ClassesClient } from "./classes-client";
@@ -56,19 +58,56 @@ export default async function ClassesPage() {
         await getAssignedWorkoutForAthlete(session.id, athlete.id),
       ] as const),
   );
+  const assignedWorkoutsBySession = Object.fromEntries(assignedWorkouts);
+  const movementOptionsBySession = Object.fromEntries(
+    upcomingSessions.map((session) => {
+      const floor = new Set(
+        gyms
+          .find(({ id }) => id === session.gymId)
+          ?.floor.map(({ equipment }) => equipment) ?? [],
+      );
+      const activeImpediments = athlete.impediments.filter(
+        ({ startDate, endDate }) =>
+          startDate <= session.localDate &&
+          (endDate === undefined || endDate >= session.localDate),
+      );
+      const constraints = mergeConstraints(activeImpediments);
+      const assignedMovementIds = new Set(
+        assignedWorkoutsBySession[session.id]?.workout.movements.map(
+          ({ movementId }) => movementId,
+        ) ?? [],
+      );
+      return [
+        session.id,
+        getAllMovements()
+          .map((movement) => ({
+            ...movement,
+            available: checkMovement(movement, constraints, floor).allowed,
+          }))
+          .filter(({ id, available }) => available || assignedMovementIds.has(id))
+          .map(({ id, name, loadType, available }) => ({
+            id,
+            name,
+            loadType,
+            available,
+          })),
+      ];
+    }),
+  );
 
   return (
     <ClassesClient
       gyms={gyms}
       upcomingSessions={upcomingSessions}
       programmedWorkoutsBySession={Object.fromEntries(programmedWorkouts)}
-      assignedWorkoutsBySession={Object.fromEntries(assignedWorkouts)}
+      assignedWorkoutsBySession={assignedWorkoutsBySession}
       classesByGym={Object.fromEntries(
         ownerData.map(({ gymId, classes }) => [gymId, classes]),
       )}
       coachesByGym={Object.fromEntries(
         ownerData.map(({ gymId, coaches }) => [gymId, coaches]),
       )}
+      movementOptionsBySession={movementOptionsBySession}
     />
   );
 }
