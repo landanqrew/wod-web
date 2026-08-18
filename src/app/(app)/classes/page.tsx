@@ -7,6 +7,7 @@ import { getGymMembers, getGymsForAthlete } from "@/lib/data/gym";
 import { getProgrammedWorkoutForSession } from "@/lib/data/programmed-workout";
 import { getAssignedWorkoutForAthlete } from "@/lib/data/assigned-workout";
 import { MembershipRole } from "@/lib/domain/models/gym";
+import { getAllMovements } from "@/lib/domain/movements/library";
 import { ensureUpcomingClassSessions } from "@/lib/training/gym-class";
 import { ensureAssignedWorkoutsForAthlete } from "@/lib/training/assigned-workout";
 import { ClassesClient } from "./classes-client";
@@ -69,6 +70,7 @@ export default async function ClassesPage() {
       coachesByGym={Object.fromEntries(
         ownerData.map(({ gymId, coaches }) => [gymId, coaches]),
       )}
+      movementOptions={getAllMovements().map(({ id, name }) => ({ id, name }))}
     />
   );
 }

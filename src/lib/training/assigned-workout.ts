@@ -1,4 +1,5 @@
 import { and, eq, gte, isNull, lte, or } from "drizzle-orm";
+import { isDeepStrictEqual } from "node:util";
 import { db } from "../db";
 import {
   assignedWorkouts,
@@ -17,6 +18,8 @@ import type { AssignedMovementProvenance } from "../domain/models/assigned-worko
 import type { Workout } from "../domain/models/workout";
 import {
   personaliseWorkout,
+  reconcileAssignedWorkout,
+  type ReconciliationSnapshot,
   type PersonalisationChange,
 } from "../domain/personalisation";
 import { newId } from "../ids";
@@ -36,6 +39,7 @@ function provenanceFor(
       (explanation) => !explanation.startsWith("Resolved Rx Pair"),
     );
     const provenance: AssignedMovementProvenance = {
+      programmedMovementId: original?.movementId ?? prescription.movementId,
       movementId: substituted ? "adjusted" : "programmed",
     };
     for (const field of [
@@ -62,7 +66,7 @@ function provenanceFor(
   });
 }
 
-export async function materialiseAssignedWorkout(
+export async function deriveAssignedWorkout(
   tx: Transaction,
   input: {
     reservationId: string;
@@ -71,14 +75,8 @@ export async function materialiseAssignedWorkout(
     localDate: string;
     programmedWorkout: Workout;
   },
-) {
-  const [existing] = await tx
-    .select({ id: assignedWorkouts.id })
-    .from(assignedWorkouts)
-    .where(eq(assignedWorkouts.reservationId, input.reservationId))
-    .limit(1);
-  if (existing) return existing.id;
-
+  assignedWorkoutId: string,
+): Promise<ReconciliationSnapshot> {
   const athleteRow = await tx
     .select()
     .from(athletes)
@@ -155,16 +153,61 @@ export async function materialiseAssignedWorkout(
       return next;
     },
   );
-  const id = newId("assigned_workout");
-  const workout = { ...personalised.workout, id, movements };
+  const workout = { ...personalised.workout, id: assignedWorkoutId, movements };
+  return {
+    workout,
+    provenance: provenanceFor(input.programmedWorkout, workout, changes),
+    changes,
+  };
+}
+
+function snapshotsEqual(
+  left: ReconciliationSnapshot,
+  right: ReconciliationSnapshot,
+): boolean {
+  return isDeepStrictEqual(left, right);
+}
+
+export async function materialiseAssignedWorkout(
+  tx: Transaction,
+  input: {
+    reservationId: string;
+    athleteId: string;
+    gymId: string;
+    localDate: string;
+    programmedWorkout: Workout;
+  },
+) {
+  const [existing] = await tx
+    .select()
+    .from(assignedWorkouts)
+    .where(eq(assignedWorkouts.reservationId, input.reservationId))
+    .limit(1)
+    .for("update");
+  const id = existing?.id ?? newId("assigned_workout");
+  const derived = await deriveAssignedWorkout(tx, input, id);
+  if (existing) {
+    const current: ReconciliationSnapshot = {
+      workout: existing.workout,
+      provenance: existing.provenance,
+      changes: existing.changes,
+    };
+    const reconciled = reconcileAssignedWorkout(current, derived).snapshot;
+    if (!snapshotsEqual(current, reconciled)) {
+      await tx
+        .update(assignedWorkouts)
+        .set({ ...reconciled, updatedAt: new Date() })
+        .where(eq(assignedWorkouts.id, existing.id));
+    }
+    return existing.id;
+  }
+
   const [stored] = await tx
     .insert(assignedWorkouts)
     .values({
       id,
       reservationId: input.reservationId,
-      workout,
-      provenance: provenanceFor(input.programmedWorkout, workout, changes),
-      changes,
+      ...derived,
     })
     .onConflictDoNothing({ target: assignedWorkouts.reservationId })
     .returning({ id: assignedWorkouts.id });
@@ -176,6 +219,47 @@ export async function materialiseAssignedWorkout(
     .limit(1);
   if (!conflict) throw new Error("Assigned Workout was not materialised");
   return conflict.id;
+}
+
+export async function reconcileAssignedWorkoutsForAthleteInTransaction(
+  tx: Transaction,
+  athleteId: string,
+) {
+  const rows = await tx
+    .select({
+      reservationId: reservations.id,
+      gymId: gymClasses.gymId,
+      localDate: classSessions.localDate,
+      programmedWorkout: programmedWorkouts.workout,
+    })
+    .from(assignedWorkouts)
+    .innerJoin(
+      reservations,
+      eq(reservations.id, assignedWorkouts.reservationId),
+    )
+    .innerJoin(classSessions, eq(classSessions.id, reservations.classSessionId))
+    .innerJoin(gymClasses, eq(gymClasses.id, classSessions.classId))
+    .innerJoin(
+      programmedWorkouts,
+      eq(programmedWorkouts.classSessionId, classSessions.id),
+    )
+    .where(
+      and(
+        eq(reservations.athleteId, athleteId),
+        isNull(classSessions.cancelledAt),
+        gte(classSessions.startsAt, new Date()),
+      ),
+    )
+    .for("update", { of: assignedWorkouts });
+  for (const row of rows) {
+    await materialiseAssignedWorkout(tx, { ...row, athleteId });
+  }
+}
+
+export async function reconcileAssignedWorkoutsForAthlete(athleteId: string) {
+  await db.transaction((tx) =>
+    reconcileAssignedWorkoutsForAthleteInTransaction(tx, athleteId),
+  );
 }
 
 /** Lazy upgrade reconciliation for Reservations that pre-date Assigned Workouts. */

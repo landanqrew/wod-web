@@ -4,6 +4,8 @@ import type { Workout } from "./workout";
 export type ValueProvenance = "programmed" | "adjusted" | "overridden";
 
 export interface AssignedMovementProvenance {
+  /** Coach-authored movement identity; absent only on pre-reconciliation rows. */
+  programmedMovementId?: string;
   movementId: ValueProvenance;
   reps?: ValueProvenance;
   load?: ValueProvenance;

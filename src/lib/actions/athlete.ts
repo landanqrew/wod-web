@@ -2,11 +2,15 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { athletes, impediments } from "@/lib/db/schema";
+import { athletes } from "@/lib/db/schema";
 import { getAthlete, getUser } from "@/lib/data/athlete";
-import { addImpedimentFor, createAthleteProfile } from "@/lib/training/profile";
+import {
+  addImpedimentFor,
+  createAthleteProfile,
+  removeImpedimentFor,
+} from "@/lib/training/profile";
 
 export async function completeOnboarding(raw: unknown) {
   const user = await getUser();
@@ -33,9 +37,7 @@ export async function removeImpediment(impedimentId: string) {
   const athlete = await getAthlete();
   if (!athlete) redirect("/onboarding");
 
-  await db
-    .delete(impediments)
-    .where(and(eq(impediments.id, impedimentId), eq(impediments.athleteId, athlete.id)));
+  await removeImpedimentFor(athlete.id, impedimentId);
 
   revalidatePath("/", "layout");
 }
