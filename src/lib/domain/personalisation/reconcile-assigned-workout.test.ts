@@ -59,16 +59,17 @@ describe("Assigned Workout reconciliation", () => {
       },
     ]);
 
-    const result = reconcileAssignedWorkout(current, derived);
+    const result = reconcileAssignedWorkout(current, derived, [
+      { movementId: "back_squat", reps: 3, load: 225 },
+    ]);
     expect(result.snapshot.workout.movements[0]).toMatchObject({
       movementId: "back_squat",
       reps: 3,
       load: 200,
     });
     expect(result.snapshot.provenance[0].load).toBe("overridden");
-    expect(result.notices.join(" ")).toContain("heavier");
+    expect(result.notices).toEqual([]);
     expect(result.snapshot.changes[0].explanations).toEqual([
-      "Athlete override: movement 1 load is heavier than programmed",
       "Athlete override: load set to 200 lb",
     ]);
   });
@@ -120,6 +121,98 @@ describe("Assigned Workout reconciliation", () => {
     ]);
 
     expect(reconcileAssignedWorkout(current, derived).snapshot).toEqual(derived);
+  });
+
+  it("does not move parameter overrides onto a different adjusted Movement", () => {
+    const current = snapshot(workout("back_extension", { reps: 12 }), [
+      {
+        programmedMovementId: "back_squat",
+        movementId: "adjusted",
+        reps: "overridden",
+      },
+    ]);
+    const derived = snapshot(workout("back_squat", { reps: 5, load: 155 }), [
+      {
+        programmedMovementId: "back_squat",
+        movementId: "programmed",
+        reps: "programmed",
+        load: "programmed",
+      },
+    ]);
+
+    const result = reconcileAssignedWorkout(current, derived);
+    expect(result.snapshot.workout.movements[0]).toMatchObject({
+      movementId: "back_squat",
+      reps: 5,
+    });
+    expect(result.discardedOverrides[0].fields).toEqual(["reps"]);
+    expect(result.notices.join(" ")).toContain("discarded athlete overrides");
+  });
+
+  it("recomputes heavier warnings from the programmed rather than adjusted load", () => {
+    const current = snapshot(
+      workout("back_squat", { reps: 5, load: 200 }),
+      [
+        {
+          programmedMovementId: "back_squat",
+          movementId: "programmed",
+          reps: "programmed",
+          load: "overridden",
+        },
+      ],
+      [
+        {
+          movementIndex: 0,
+          originalMovementId: "back_squat",
+          personalisedMovementId: "back_squat",
+          explanations: [
+            "Athlete override: load set to 200 lb",
+            "Athlete override warning: movement 1 load is heavier than programmed",
+          ],
+        },
+      ],
+    );
+    const derived = snapshot(workout("back_squat", { reps: 5, load: 155 }), [
+      {
+        programmedMovementId: "back_squat",
+        movementId: "programmed",
+        reps: "programmed",
+        load: "adjusted",
+      },
+    ]);
+
+    const result = reconcileAssignedWorkout(current, derived, [
+      { movementId: "back_squat", reps: 5, load: 225 },
+    ]);
+    expect(result.notices).toEqual([]);
+    expect(result.snapshot.changes[0].explanations).toEqual([
+      "Athlete override: load set to 200 lb",
+    ]);
+  });
+
+  it("reports overrides discarded by a removed prescription line", () => {
+    const current = snapshot(workout("back_squat", { reps: 7 }), [
+      {
+        programmedMovementId: "back_squat",
+        movementId: "programmed",
+        reps: "overridden",
+      },
+    ]);
+    const derived = snapshot(
+      { ...workout("back_squat"), movements: [] },
+      [],
+    );
+
+    const result = reconcileAssignedWorkout(current, derived);
+    expect(result.snapshot.workout.movements).toEqual([]);
+    expect(result.discardedOverrides[0]).toEqual({
+      movementIndex: 0,
+      fields: ["reps"],
+    });
+    expect(result.snapshot.changes[0]).toMatchObject({
+      movementIndex: 0,
+      personalisedMovementId: "removed",
+    });
   });
 
   it("is a no-op when upstream inputs have not changed", () => {

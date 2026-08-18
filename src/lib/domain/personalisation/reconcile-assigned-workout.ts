@@ -35,6 +35,7 @@ const VALUE_FIELDS = [
 type ValueField = (typeof VALUE_FIELDS)[number];
 
 export const ATHLETE_OVERRIDE_EXPLANATION_PREFIX = "Athlete override:";
+export const ATHLETE_OVERRIDE_WARNING_PREFIX = "Athlete override warning:";
 
 function athleteOverrideExplanations(
   snapshot: ReconciliationSnapshot,
@@ -97,6 +98,7 @@ function copyOverride(
 export function reconcileAssignedWorkout(
   current: ReconciliationSnapshot,
   derived: ReconciliationSnapshot,
+  programmedMovements: MovementPrescription[] = derived.workout.movements,
 ): ReconciliationResult {
   const notices: string[] = [];
   const discardedOverrides: DiscardedOverrides[] = [];
@@ -107,50 +109,61 @@ export function reconcileAssignedWorkout(
     explanations: [...change.explanations],
   }));
 
-  for (let movementIndex = 0; movementIndex < movements.length; movementIndex += 1) {
+  const lineCount = Math.max(
+    current.workout.movements.length,
+    movements.length,
+  );
+  for (let movementIndex = 0; movementIndex < lineCount; movementIndex += 1) {
     const currentPrescription = current.workout.movements[movementIndex];
     const currentProvenance = current.provenance[movementIndex];
     if (!currentPrescription || !currentProvenance) continue;
     const overrideFields = VALUE_FIELDS.filter(
       (field) => currentProvenance[field] === "overridden",
     );
-    if (
+    const derivedPrescription = movements[movementIndex];
+    const programmedMovementChanged =
       programmedIdentity(current, movementIndex) !==
-      programmedIdentity(derived, movementIndex)
-    ) {
+      programmedIdentity(derived, movementIndex);
+    const adjustedMovementChanged =
+      currentProvenance.movementId !== "overridden" &&
+      currentPrescription.movementId !== derivedPrescription?.movementId;
+    if (programmedMovementChanged || adjustedMovementChanged) {
       if (overrideFields.length > 0) {
         discardedOverrides.push({ movementIndex, fields: overrideFields });
-        const notice = `Coach changed movement ${movementIndex + 1}; discarded athlete overrides for ${overrideFields.join(", ")}`;
+        const notice = `Movement ${movementIndex + 1} changed; discarded athlete overrides for ${overrideFields.join(", ")}`;
         notices.push(notice);
         appendExplanation(
           changes,
           movementIndex,
-          programmedIdentity(derived, movementIndex) ?? movements[movementIndex].movementId,
-          movements[movementIndex].movementId,
+          programmedIdentity(derived, movementIndex) ?? "removed",
+          derivedPrescription?.movementId ?? "removed",
           notice,
         );
       }
       continue;
     }
+    if (!derivedPrescription) continue;
 
     for (const field of overrideFields) {
-      copyOverride(field, currentPrescription, movements[movementIndex]);
+      copyOverride(field, currentPrescription, derivedPrescription);
       Object.assign(provenance[movementIndex], {
         [field]: "overridden" satisfies ValueProvenance,
       });
       if (
         field === "load" &&
         currentPrescription.load !== undefined &&
-        derived.workout.movements[movementIndex]?.load !== undefined &&
-        currentPrescription.load > derived.workout.movements[movementIndex].load!
+        programmedMovements[movementIndex]?.movementId ===
+          derivedPrescription.movementId &&
+        programmedMovements[movementIndex]?.load !== undefined &&
+        currentPrescription.load > programmedMovements[movementIndex].load!
       ) {
-        const notice = `Athlete override: movement ${movementIndex + 1} load is heavier than programmed`;
+        const notice = `${ATHLETE_OVERRIDE_WARNING_PREFIX} movement ${movementIndex + 1} load is heavier than programmed`;
         notices.push(notice);
         appendExplanation(
           changes,
           movementIndex,
-          programmedIdentity(derived, movementIndex) ?? movements[movementIndex].movementId,
-          movements[movementIndex].movementId,
+          programmedIdentity(derived, movementIndex) ?? derivedPrescription.movementId,
+          derivedPrescription.movementId,
           notice,
         );
       }
@@ -159,8 +172,8 @@ export function reconcileAssignedWorkout(
       appendExplanation(
         changes,
         movementIndex,
-        programmedIdentity(derived, movementIndex) ?? movements[movementIndex].movementId,
-        movements[movementIndex].movementId,
+        programmedIdentity(derived, movementIndex) ?? derivedPrescription.movementId,
+        derivedPrescription.movementId,
         explanation,
       );
     }

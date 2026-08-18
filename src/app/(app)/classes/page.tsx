@@ -8,6 +8,7 @@ import { getProgrammedWorkoutForSession } from "@/lib/data/programmed-workout";
 import { getAssignedWorkoutForAthlete } from "@/lib/data/assigned-workout";
 import { MembershipRole } from "@/lib/domain/models/gym";
 import { getAllMovements } from "@/lib/domain/movements/library";
+import { checkMovement, mergeConstraints } from "@/lib/domain/scaling/constraint-engine";
 import { ensureUpcomingClassSessions } from "@/lib/training/gym-class";
 import { ensureAssignedWorkoutsForAthlete } from "@/lib/training/assigned-workout";
 import { ClassesClient } from "./classes-client";
@@ -57,6 +58,27 @@ export default async function ClassesPage() {
         await getAssignedWorkoutForAthlete(session.id, athlete.id),
       ] as const),
   );
+  const movementOptionsBySession = Object.fromEntries(
+    upcomingSessions.map((session) => {
+      const floor = new Set(
+        gyms
+          .find(({ id }) => id === session.gymId)
+          ?.floor.map(({ equipment }) => equipment) ?? [],
+      );
+      const activeImpediments = athlete.impediments.filter(
+        ({ startDate, endDate }) =>
+          startDate <= session.localDate &&
+          (endDate === undefined || endDate >= session.localDate),
+      );
+      const constraints = mergeConstraints(activeImpediments);
+      return [
+        session.id,
+        getAllMovements()
+          .filter((movement) => checkMovement(movement, constraints, floor).allowed)
+          .map(({ id, name, loadType }) => ({ id, name, loadType })),
+      ];
+    }),
+  );
 
   return (
     <ClassesClient
@@ -70,7 +92,7 @@ export default async function ClassesPage() {
       coachesByGym={Object.fromEntries(
         ownerData.map(({ gymId, coaches }) => [gymId, coaches]),
       )}
-      movementOptions={getAllMovements().map(({ id, name }) => ({ id, name }))}
+      movementOptionsBySession={movementOptionsBySession}
     />
   );
 }

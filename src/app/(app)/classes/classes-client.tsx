@@ -92,7 +92,7 @@ export function ClassesClient({
   assignedWorkoutsBySession,
   classesByGym,
   coachesByGym,
-  movementOptions,
+  movementOptionsBySession,
 }: {
   gyms: Gym[];
   upcomingSessions: ClassSessionSummary[];
@@ -100,7 +100,10 @@ export function ClassesClient({
   assignedWorkoutsBySession: Record<string, AssignedWorkout | null>;
   classesByGym: Record<string, GymClass[]>;
   coachesByGym: Record<string, GymMember[]>;
-  movementOptions: Array<{ id: string; name: string }>;
+  movementOptionsBySession: Record<
+    string,
+    Array<{ id: string; name: string; loadType: string }>
+  >;
 }) {
   const router = useRouter();
   const ownerGyms = gyms.filter(
@@ -340,6 +343,17 @@ export function ClassesClient({
         toast.error("Could not apply that override. Check the Movement and Gym floor.");
       }
     });
+  }
+
+  function supportsOverrideField(field: "reps" | "load" | "duration") {
+    if (!overrideDraft) return false;
+    const loadType = movementOptionsBySession[overrideDraft.sessionId]?.find(
+      ({ id }) => id === overrideDraft.movementId,
+    )?.loadType;
+    if (field === "reps") {
+      return loadType === "weighted" || loadType === "bodyweight";
+    }
+    return loadType === field;
   }
 
   function toggleDay(dayOfWeek: number) {
@@ -802,14 +816,16 @@ export function ClassesClient({
                         })
                       }
                     >
-                      {movementOptions.map((movement) => (
+                      {(movementOptionsBySession[session.id] ?? []).map((movement) => (
                         <option key={movement.id} value={movement.id}>
                           {movement.name}
                         </option>
                       ))}
                     </Select>
                   </FieldRow>
-                  {(["reps", "load", "duration"] as const).map((field) => (
+                  {(["reps", "load", "duration"] as const)
+                    .filter(supportsOverrideField)
+                    .map((field) => (
                     <FieldRow key={field} label={formatLabel(field)}>
                       <Input
                         type="number"
@@ -823,7 +839,7 @@ export function ClassesClient({
                         }
                       />
                     </FieldRow>
-                  ))}
+                    ))}
                   <div className="flex gap-2 sm:col-span-2">
                     <Button variant="primary" disabled={pending} onClick={saveOverride}>
                       Apply override

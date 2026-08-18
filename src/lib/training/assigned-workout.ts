@@ -14,8 +14,9 @@ import {
 } from "../db/schema";
 import { rowToAthlete } from "../db/mappers";
 import type { Equipment } from "../domain/models/equipment";
+import { Sex } from "../domain/models/athlete";
 import type { AssignedMovementProvenance } from "../domain/models/assigned-workout";
-import type { Workout } from "../domain/models/workout";
+import type { MovementPrescription, Workout } from "../domain/models/workout";
 import {
   personaliseWorkout,
   reconcileAssignedWorkout,
@@ -25,6 +26,21 @@ import {
 import { newId } from "../ids";
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+export function resolveProgrammedMovements(
+  workout: Workout,
+  sex: Sex,
+): MovementPrescription[] {
+  return workout.movements.map((prescription) => {
+    const { rxLoad, ...resolved } = prescription;
+    return rxLoad === undefined
+      ? resolved
+      : {
+          ...resolved,
+          load: sex === Sex.Male ? rxLoad.male : rxLoad.female,
+        };
+  });
+}
 
 function provenanceFor(
   programmed: Workout,
@@ -76,7 +92,10 @@ export async function deriveAssignedWorkout(
     programmedWorkout: Workout;
   },
   assignedWorkoutId: string,
-): Promise<ReconciliationSnapshot> {
+): Promise<{
+  snapshot: ReconciliationSnapshot;
+  programmedMovements: MovementPrescription[];
+}> {
   const athleteRow = await tx
     .select()
     .from(athletes)
@@ -155,9 +174,15 @@ export async function deriveAssignedWorkout(
   );
   const workout = { ...personalised.workout, id: assignedWorkoutId, movements };
   return {
-    workout,
-    provenance: provenanceFor(input.programmedWorkout, workout, changes),
-    changes,
+    snapshot: {
+      workout,
+      provenance: provenanceFor(input.programmedWorkout, workout, changes),
+      changes,
+    },
+    programmedMovements: resolveProgrammedMovements(
+      input.programmedWorkout,
+      context.sex,
+    ),
   };
 }
 
@@ -185,14 +210,19 @@ export async function materialiseAssignedWorkout(
     .limit(1)
     .for("update");
   const id = existing?.id ?? newId("assigned_workout");
-  const derived = await deriveAssignedWorkout(tx, input, id);
+  const { snapshot: derived, programmedMovements } =
+    await deriveAssignedWorkout(tx, input, id);
   if (existing) {
     const current: ReconciliationSnapshot = {
       workout: existing.workout,
       provenance: existing.provenance,
       changes: existing.changes,
     };
-    const reconciled = reconcileAssignedWorkout(current, derived).snapshot;
+    const reconciled = reconcileAssignedWorkout(
+      current,
+      derived,
+      programmedMovements,
+    ).snapshot;
     if (!snapshotsEqual(current, reconciled)) {
       await tx
         .update(assignedWorkouts)

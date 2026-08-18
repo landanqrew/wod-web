@@ -18,12 +18,13 @@ import type { MovementPrescription } from "../domain/models/workout";
 import { getMovement } from "../domain/movements/library";
 import {
   ATHLETE_OVERRIDE_EXPLANATION_PREFIX,
+  ATHLETE_OVERRIDE_WARNING_PREFIX,
   type PersonalisationChange,
 } from "../domain/personalisation";
 import { createMovementPrescription } from "../domain/prescription";
 import { checkMovement, mergeConstraints } from "../domain/scaling/constraint-engine";
 import { assignedWorkoutOverrideSchema } from "../validation";
-import { deriveAssignedWorkout } from "./assigned-workout";
+import { resolveProgrammedMovements } from "./assigned-workout";
 
 type OverrideInput = z.infer<typeof assignedWorkoutOverrideSchema>;
 
@@ -66,7 +67,7 @@ function replaceOverrideExplanation(
   movementIndex: number,
   programmedMovementId: string,
   personalisedMovementId: string,
-  explanation: string,
+  explanations: string[],
 ): PersonalisationChange[] {
   const next = changes
     .map((change) => ({
@@ -75,19 +76,20 @@ function replaceOverrideExplanation(
         change.movementIndex === movementIndex
           ? change.explanations.filter(
               (item) =>
-                !item.startsWith(ATHLETE_OVERRIDE_EXPLANATION_PREFIX),
+                !item.startsWith(ATHLETE_OVERRIDE_EXPLANATION_PREFIX) &&
+                !item.startsWith(ATHLETE_OVERRIDE_WARNING_PREFIX),
             )
           : [...change.explanations],
     }))
     .filter((change) => change.explanations.length > 0);
   const existing = next.find((change) => change.movementIndex === movementIndex);
-  if (existing) existing.explanations.push(explanation);
+  if (existing) existing.explanations.push(...explanations);
   else {
     next.push({
       movementIndex,
       originalMovementId: programmedMovementId,
       personalisedMovementId,
-      explanations: [explanation],
+      explanations,
     });
   }
   return next;
@@ -212,29 +214,25 @@ export async function overrideAssignedWorkoutForAthlete(
       provenance[field] = "overridden";
     }
 
-    const derived = await deriveAssignedWorkout(
-      tx,
-      {
-        reservationId: reservation.id,
-        athleteId,
-        gymId: session.gymId,
-        localDate: session.localDate,
-        programmedWorkout: programmed.workout,
-      },
-      assigned.id,
+    const programmedMovements = resolveProgrammedMovements(
+      programmed.workout,
+      athlete.sex,
     );
-    let explanation = overrideSummary(
+    const explanations = [overrideSummary(
       input.movementIndex,
       prescription,
       provenance,
-    );
-    const derivedLoad = derived.workout.movements[input.movementIndex]?.load;
+    )];
+    const programmedPrescription = programmedMovements[input.movementIndex];
     if (
       prescription.load !== undefined &&
-      derivedLoad !== undefined &&
-      prescription.load > derivedLoad
+      programmedPrescription?.movementId === prescription.movementId &&
+      programmedPrescription.load !== undefined &&
+      prescription.load > programmedPrescription.load
     ) {
-      explanation += "; load is heavier than programmed";
+      explanations.push(
+        `${ATHLETE_OVERRIDE_WARNING_PREFIX} movement ${input.movementIndex + 1} load is heavier than programmed`,
+      );
     }
     const movements = assigned.workout.movements.map((movement, index) =>
       index === input.movementIndex ? prescription : movement,
@@ -247,7 +245,7 @@ export async function overrideAssignedWorkoutForAthlete(
       input.movementIndex,
       provenance.programmedMovementId ?? targetMovementId,
       targetMovementId,
-      explanation,
+      explanations,
     );
     await tx
       .update(assignedWorkouts)
