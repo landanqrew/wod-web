@@ -24,7 +24,10 @@ import { reconcileAssignedWorkoutsForAthleteInTransaction } from "./assigned-wor
 type PromotionInput = z.infer<typeof promoteLoadAdjustmentSchema>;
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-async function lockAthlete(tx: Transaction, athleteId: string) {
+export async function lockLoadAdjustmentAthleteInTransaction(
+  tx: Transaction,
+  athleteId: string,
+) {
   const [athlete] = await tx
     .select({ sex: athletes.sex })
     .from(athletes)
@@ -69,10 +72,16 @@ export function loadAdjustmentOffer(
     sex === Sex.Male
       ? movement?.defaultLoadMale
       : movement?.defaultLoadFemale;
-  if (!movement || libraryRxLoad === undefined || overrideLoad >= libraryRxLoad) {
+  if (
+    !movement ||
+    libraryRxLoad === undefined ||
+    !(overrideLoad > 0) ||
+    overrideLoad >= libraryRxLoad
+  ) {
     return null;
   }
   const ratio = deriveLoadAdjustmentRatio(overrideLoad, libraryRxLoad);
+  if (Math.round(libraryRxLoad * ratio) === 0) return null;
   return {
     movementId,
     movementName: movement.name,
@@ -89,7 +98,7 @@ export async function promoteLoadAdjustmentForAthlete(
   if (input.reason === "injury") return { status: "impediment_required" };
 
   return db.transaction(async (tx) => {
-    const athlete = await lockAthlete(tx, athleteId);
+    const athlete = await lockLoadAdjustmentAthleteInTransaction(tx, athleteId);
     const [row] = await tx
       .select({ assigned: assignedWorkouts })
       .from(assignedWorkouts)
@@ -107,7 +116,14 @@ export async function promoteLoadAdjustmentForAthlete(
       .for("update", { of: assignedWorkouts });
     const prescription = row?.assigned.workout.movements[input.movementIndex];
     const provenance = row?.assigned.provenance[input.movementIndex];
-    if (!row || !prescription || provenance?.load !== "overridden") {
+    if (
+      !row ||
+      !prescription ||
+      provenance?.load !== "overridden" ||
+      provenance.loadOverridePreviousValue === undefined ||
+      prescription.load === undefined ||
+      prescription.load >= provenance.loadOverridePreviousValue
+    ) {
       throw new Error("A Load Adjustment must be promoted from a load Override");
     }
     const offer = loadAdjustmentOffer(
@@ -147,22 +163,30 @@ export async function revokeLoadAdjustmentForAthlete(
   athleteId: string,
   adjustmentId: string,
 ): Promise<void> {
-  await db.transaction(async (tx) => {
-    await lockAthlete(tx, athleteId);
-    const [revoked] = await tx
-      .update(loadAdjustments)
-      .set({ revokedAt: new Date() })
-      .where(
-        and(
-          eq(loadAdjustments.id, adjustmentId),
-          eq(loadAdjustments.athleteId, athleteId),
-          isNull(loadAdjustments.revokedAt),
-        ),
-      )
-      .returning({ id: loadAdjustments.id });
-    if (!revoked) throw new Error("Load Adjustment not found");
-    await reconcileAssignedWorkoutsForAthleteInTransaction(tx, athleteId);
-  });
+  await db.transaction((tx) =>
+    revokeLoadAdjustmentForAthleteInTransaction(tx, athleteId, adjustmentId),
+  );
+}
+
+export async function revokeLoadAdjustmentForAthleteInTransaction(
+  tx: Transaction,
+  athleteId: string,
+  adjustmentId: string,
+): Promise<void> {
+  await lockLoadAdjustmentAthleteInTransaction(tx, athleteId);
+  const [revoked] = await tx
+    .update(loadAdjustments)
+    .set({ revokedAt: new Date() })
+    .where(
+      and(
+        eq(loadAdjustments.id, adjustmentId),
+        eq(loadAdjustments.athleteId, athleteId),
+        isNull(loadAdjustments.revokedAt),
+      ),
+    )
+    .returning({ id: loadAdjustments.id });
+  if (!revoked) throw new Error("Load Adjustment not found");
+  await reconcileAssignedWorkoutsForAthleteInTransaction(tx, athleteId);
 }
 
 export async function getActiveLoadAdjustmentsForAthlete(

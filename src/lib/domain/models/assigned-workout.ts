@@ -9,6 +9,8 @@ export interface AssignedMovementProvenance {
   movementId: ValueProvenance;
   reps?: ValueProvenance;
   load?: ValueProvenance;
+  /** Effective load immediately before the athlete's latest load Override. */
+  loadOverridePreviousValue?: number;
   distance?: ValueProvenance;
   duration?: ValueProvenance;
   calories?: ValueProvenance;

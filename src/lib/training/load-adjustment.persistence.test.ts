@@ -15,9 +15,11 @@ import { createClassForOwner } from "./gym-class";
 import { overrideAssignedWorkoutForAthlete } from "./assigned-workout-override";
 import {
   getActiveLoadAdjustmentsForAthlete,
+  lockLoadAdjustmentAthleteInTransaction,
   loadAdjustmentOffer,
   promoteLoadAdjustmentForAthlete,
   revokeLoadAdjustmentForAthlete,
+  revokeLoadAdjustmentForAthleteInTransaction,
 } from "./load-adjustment";
 import { logResultForAthlete, upsertWorkout } from "./log";
 import { programGymDay, updateProgrammedWorkoutForSession } from "./programmed-workout";
@@ -89,7 +91,7 @@ describe("Load Adjustment lifecycle", () => {
       role: MembershipRole.Member,
     });
     const classIds = await Promise.all(
-      ["06:00", "17:00"].map((localTime) =>
+      ["06:00", "12:00", "17:00"].map((localTime) =>
         createClassForOwner(
           gymId!,
           ownerAthleteId,
@@ -105,7 +107,7 @@ describe("Load Adjustment lifecycle", () => {
       ),
     );
     const sessions = await getClassSessionsForGym(gymId, ownerAthleteId, classIds);
-    await programGymDay(gymId, ownerAthleteId, "2027-05-03", workout(65));
+    await programGymDay(gymId, ownerAthleteId, "2027-05-03", workout(95));
     for (const session of sessions) {
       await reserveClassSessionForAthlete(
         session.id,
@@ -123,7 +125,20 @@ describe("Load Adjustment lifecycle", () => {
       movementId: "thruster",
       percent: 71,
     });
+    await expect(
+      overrideAssignedWorkoutForAthlete(sessions[2].id, memberAthleteId, {
+        movementIndex: 0,
+        load: 0,
+      }),
+    ).resolves.toBeNull();
+    const zeroOverride = await getAssignedWorkoutForAthlete(
+      sessions[2].id,
+      memberAthleteId,
+    );
+    expect(zeroOverride?.workout.movements[0].load).toBe(0);
     expect(loadAdjustmentOffer("air_squat", 10, Sex.Male)).toBeNull();
+    expect(loadAdjustmentOffer("thruster", 100, Sex.Male)).toBeNull();
+    expect(loadAdjustmentOffer("thruster", 0, Sex.Male)).toBeNull();
     await expect(
       promoteLoadAdjustmentForAthlete(memberAthleteId, {
         classSessionId: sessions[0].id,
@@ -153,6 +168,13 @@ describe("Load Adjustment lifecycle", () => {
       sessions[1].id,
       memberAthleteId,
     );
+    expect(assigned?.workout.movements[0].load).toBe(67);
+    await updateProgrammedWorkoutForSession(
+      sessions[1].id,
+      ownerAthleteId,
+      workout(65),
+    );
+    assigned = await getAssignedWorkoutForAthlete(sessions[1].id, memberAthleteId);
     expect(assigned?.workout.movements).toMatchObject([
       { movementId: "thruster", reps: 5, load: 46 },
       { movementId: "push_press", reps: 8, load: 95 },
@@ -200,7 +222,44 @@ describe("Load Adjustment lifecycle", () => {
     await expect(
       revokeLoadAdjustmentForAthlete(outsiderAthleteId, active.id),
     ).rejects.toThrow("Load Adjustment not found");
-    await revokeLoadAdjustmentForAthlete(memberAthleteId, active.id);
+    let releaseRevoke: (() => void) | undefined;
+    const revokeCanCommit = new Promise<void>((resolve) => {
+      releaseRevoke = resolve;
+    });
+    let athleteLocked: (() => void) | undefined;
+    const athleteIsLocked = new Promise<void>((resolve) => {
+      athleteLocked = resolve;
+    });
+    const blockingRevoke = db.transaction(async (tx) => {
+      await lockLoadAdjustmentAthleteInTransaction(tx, memberAthleteId);
+      athleteLocked?.();
+      await revokeCanCommit;
+      await revokeLoadAdjustmentForAthleteInTransaction(
+        tx,
+        memberAthleteId,
+        active.id,
+      );
+    });
+    await athleteIsLocked;
+    const concurrentPromotion = promoteLoadAdjustmentForAthlete(memberAthleteId, {
+      classSessionId: sessions[0].id,
+      movementIndex: 0,
+      reason: "capability",
+    });
+    const promotionState = await Promise.race([
+      concurrentPromotion.then(() => "completed" as const),
+      new Promise<"waiting">((resolve) =>
+        setTimeout(() => resolve("waiting"), 100),
+      ),
+    ]);
+    releaseRevoke?.();
+    await Promise.all([blockingRevoke, concurrentPromotion]);
+    expect(promotionState).toBe("waiting");
+    const [replacement] = await getActiveLoadAdjustmentsForAthlete(
+      memberAthleteId,
+    );
+    expect(replacement.id).not.toBe(active.id);
+    await revokeLoadAdjustmentForAthlete(memberAthleteId, replacement.id);
     await expect(
       getActiveLoadAdjustmentsForAthlete(memberAthleteId),
     ).resolves.toEqual([]);

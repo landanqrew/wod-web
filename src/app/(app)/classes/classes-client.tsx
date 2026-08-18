@@ -353,7 +353,7 @@ export function ClassesClient({
             movementName: result.loadAdjustmentOffer.movementName,
             percent: result.loadAdjustmentOffer.percent,
           });
-        }
+        } else setPromotionPrompt(null);
         toast.success("Assigned Workout updated");
         setOverrideDraft(null);
         router.refresh();
@@ -375,8 +375,11 @@ export function ClassesClient({
         });
         if (result.status === "impediment_required") {
           toast.info(
-            "Use a dated Impediment for pain or injury so the restriction can expire.",
+            "Record a dated Impediment so the injury restriction can expire.",
           );
+          setPromotionPrompt(null);
+          router.push("/adjustments?newImpediment=1");
+          return;
         } else {
           toast.success("Load Adjustment will apply to future programmed loads");
         }

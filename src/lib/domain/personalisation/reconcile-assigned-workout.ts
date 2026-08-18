@@ -152,6 +152,13 @@ export function reconcileAssignedWorkout(
       });
       if (
         field === "load" &&
+        currentProvenance.loadOverridePreviousValue !== undefined
+      ) {
+        provenance[movementIndex].loadOverridePreviousValue =
+          currentProvenance.loadOverridePreviousValue;
+      }
+      if (
+        field === "load" &&
         currentPrescription.load !== undefined &&
         programmedMovements[movementIndex]?.movementId ===
           derivedPrescription.movementId &&
