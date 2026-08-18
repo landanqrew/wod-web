@@ -17,12 +17,14 @@ import type { Equipment } from "../domain/models/equipment";
 import { Sex } from "../domain/models/athlete";
 import type { AssignedMovementProvenance } from "../domain/models/assigned-workout";
 import type { MovementPrescription, Workout } from "../domain/models/workout";
+import { getAllMovements } from "../domain/movements/library";
 import {
   personaliseWorkout,
   reconcileAssignedWorkout,
   type ReconciliationSnapshot,
   type PersonalisationChange,
 } from "../domain/personalisation";
+import { checkMovement, mergeConstraints } from "../domain/scaling/constraint-engine";
 import { newId } from "../ids";
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -95,6 +97,7 @@ export async function deriveAssignedWorkout(
 ): Promise<{
   snapshot: ReconciliationSnapshot;
   programmedMovements: MovementPrescription[];
+  allowedMovementIds: ReadonlySet<string>;
 }> {
   const athleteRow = await tx
     .select()
@@ -132,6 +135,14 @@ export async function deriveAssignedWorkout(
   const context = rowToAthlete(athlete, impedimentRows);
   context.equipment = new Set(
     floorRows.map(({ equipment }) => equipment as Equipment),
+  );
+  const constraints = mergeConstraints(context.impediments);
+  const allowedMovementIds = new Set(
+    getAllMovements()
+      .filter((movement) =>
+        checkMovement(movement, constraints, context.equipment).allowed,
+      )
+      .map(({ id }) => id),
   );
   const personalised = personaliseWorkout(input.programmedWorkout, context);
   const changes = personalised.changes.map((change) => ({
@@ -183,6 +194,7 @@ export async function deriveAssignedWorkout(
       input.programmedWorkout,
       context.sex,
     ),
+    allowedMovementIds,
   };
 }
 
@@ -210,7 +222,7 @@ export async function materialiseAssignedWorkout(
     .limit(1)
     .for("update");
   const id = existing?.id ?? newId("assigned_workout");
-  const { snapshot: derived, programmedMovements } =
+  const { snapshot: derived, programmedMovements, allowedMovementIds } =
     await deriveAssignedWorkout(tx, input, id);
   if (existing) {
     const current: ReconciliationSnapshot = {
@@ -222,6 +234,14 @@ export async function materialiseAssignedWorkout(
       current,
       derived,
       programmedMovements,
+      new Set(
+        current.workout.movements.flatMap((prescription, movementIndex) =>
+          current.provenance[movementIndex]?.movementId === "overridden" &&
+          !allowedMovementIds.has(prescription.movementId)
+            ? [movementIndex]
+            : [],
+        ),
+      ),
     ).snapshot;
     if (!snapshotsEqual(current, reconciled)) {
       await tx

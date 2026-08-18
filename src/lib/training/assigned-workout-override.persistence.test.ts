@@ -137,6 +137,27 @@ describe("Assigned Workout overrides and reconciliation", () => {
       movementIndex: 0,
       movementId: "front_squat",
     });
+    await addImpedimentFor(memberAthleteId, {
+      category: ImpedimentCategory.AcuteInjury,
+      severity: ImpedimentSeverity.Moderate,
+      affectedMuscles: [],
+      affectedJoints: [Joint.Ankles],
+      description: "Temporary ankle issue",
+      startDate: "2027-01-01",
+    });
+    const [ankleImpediment] = await db
+      .select({ id: impediments.id })
+      .from(impediments)
+      .where(eq(impediments.athleteId, memberAthleteId))
+      .limit(1);
+    assigned = await getAssignedWorkoutForAthlete(session.id, memberAthleteId);
+    expect(assigned?.workout.movements[0].movementId).toBe("front_squat");
+    expect(assigned?.changes.flatMap(({ explanations }) => explanations).join(" "))
+      .toContain("unavailable under current constraints");
+    await removeImpedimentFor(memberAthleteId, ankleImpediment.id);
+    assigned = await getAssignedWorkoutForAthlete(session.id, memberAthleteId);
+    expect(assigned?.changes.flatMap(({ explanations }) => explanations).join(" "))
+      .not.toContain("unavailable under current constraints");
     await updateProgrammedWorkoutForSession(
       session.id,
       ownerAthleteId,

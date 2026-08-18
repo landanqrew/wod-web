@@ -98,7 +98,8 @@ function copyOverride(
 export function reconcileAssignedWorkout(
   current: ReconciliationSnapshot,
   derived: ReconciliationSnapshot,
-  programmedMovements: MovementPrescription[] = derived.workout.movements,
+  programmedMovements: MovementPrescription[],
+  unavailableOverrideMovementIndexes: ReadonlySet<number> = new Set(),
 ): ReconciliationResult {
   const notices: string[] = [];
   const discardedOverrides: DiscardedOverrides[] = [];
@@ -167,6 +168,20 @@ export function reconcileAssignedWorkout(
           notice,
         );
       }
+    }
+    if (
+      currentProvenance.movementId === "overridden" &&
+      unavailableOverrideMovementIndexes.has(movementIndex)
+    ) {
+      const notice = `${ATHLETE_OVERRIDE_WARNING_PREFIX} movement ${movementIndex + 1} is unavailable under current constraints`;
+      notices.push(notice);
+      appendExplanation(
+        changes,
+        movementIndex,
+        programmedIdentity(derived, movementIndex) ?? derivedPrescription.movementId,
+        derivedPrescription.movementId,
+        notice,
+      );
     }
     for (const explanation of athleteOverrideExplanations(current, movementIndex)) {
       appendExplanation(

@@ -92,7 +92,11 @@ describe("Assigned Workout reconciliation", () => {
       },
     ]);
 
-    const result = reconcileAssignedWorkout(current, derived);
+    const result = reconcileAssignedWorkout(
+      current,
+      derived,
+      derived.workout.movements,
+    );
     expect(result.snapshot.workout).toEqual(derived.workout);
     expect(result.snapshot.provenance).toEqual(derived.provenance);
     expect(result.discardedOverrides).toEqual([
@@ -120,7 +124,10 @@ describe("Assigned Workout reconciliation", () => {
       },
     ]);
 
-    expect(reconcileAssignedWorkout(current, derived).snapshot).toEqual(derived);
+    expect(
+      reconcileAssignedWorkout(current, derived, derived.workout.movements)
+        .snapshot,
+    ).toEqual(derived);
   });
 
   it("does not move parameter overrides onto a different adjusted Movement", () => {
@@ -140,7 +147,11 @@ describe("Assigned Workout reconciliation", () => {
       },
     ]);
 
-    const result = reconcileAssignedWorkout(current, derived);
+    const result = reconcileAssignedWorkout(
+      current,
+      derived,
+      derived.workout.movements,
+    );
     expect(result.snapshot.workout.movements[0]).toMatchObject({
       movementId: "back_squat",
       reps: 5,
@@ -203,7 +214,11 @@ describe("Assigned Workout reconciliation", () => {
       [],
     );
 
-    const result = reconcileAssignedWorkout(current, derived);
+    const result = reconcileAssignedWorkout(
+      current,
+      derived,
+      derived.workout.movements,
+    );
     expect(result.snapshot.workout.movements).toEqual([]);
     expect(result.discardedOverrides[0]).toEqual({
       movementIndex: 0,
@@ -225,10 +240,46 @@ describe("Assigned Workout reconciliation", () => {
       },
     ]);
 
-    expect(reconcileAssignedWorkout(current, current)).toEqual({
+    expect(
+      reconcileAssignedWorkout(current, current, current.workout.movements),
+    ).toEqual({
       snapshot: current,
       notices: [],
       discardedOverrides: [],
     });
+  });
+
+  it("preserves but surfaces an overridden Movement made unavailable by constraints", () => {
+    const current = snapshot(workout("front_squat", { reps: 5, load: 185 }), [
+      {
+        programmedMovementId: "back_squat",
+        movementId: "overridden",
+        reps: "overridden",
+        load: "overridden",
+      },
+    ]);
+    const derived = snapshot(workout("air_squat", { reps: 5 }), [
+      {
+        programmedMovementId: "back_squat",
+        movementId: "adjusted",
+        reps: "programmed",
+      },
+    ]);
+
+    const result = reconcileAssignedWorkout(
+      current,
+      derived,
+      [{ movementId: "back_squat", reps: 5, load: 225 }],
+      new Set([0]),
+    );
+    expect(result.snapshot.workout.movements[0]).toMatchObject({
+      movementId: "front_squat",
+      reps: 5,
+      load: 185,
+    });
+    expect(result.notices.join(" ")).toContain("unavailable");
+    expect(result.snapshot.changes[0].explanations.join(" ")).toContain(
+      "unavailable under current constraints",
+    );
   });
 });
