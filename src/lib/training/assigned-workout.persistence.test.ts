@@ -31,6 +31,7 @@ import { ensureAssignedWorkoutsForAthlete } from "./assigned-workout";
 import {
   cancelReservationForAthlete,
   reserveClassSessionForAthlete,
+  reserveClassSessionForAthleteInTransaction,
 } from "./reservation";
 
 const ownerUserId = newId("test_user");
@@ -277,5 +278,62 @@ describe("Assigned Workout materialisation", () => {
     );
     expect(fresh).toMatchObject({ reservationId: newReservationId });
     expect(fresh?.id).not.toBe(oldAssignedId);
+
+    const concurrentClassId = await createClassForOwner(
+      gymId,
+      ownerAthleteId,
+      {
+        name: "Concurrent noon",
+        coachAthleteId: ownerAthleteId,
+        weeklyTimes: [{ dayOfWeek: 1, localTime: "12:00" }],
+        timeZone: "America/Chicago",
+        capacity: 20,
+      },
+      { startDate: "2027-03-08", endDate: "2027-03-08" },
+    );
+    const [concurrentSession] = await getClassSessionsForGym(
+      gymId,
+      ownerAthleteId,
+      [concurrentClassId],
+    );
+    let releaseReservation: (() => void) | undefined;
+    const reservationCanCommit = new Promise<void>((resolve) => {
+      releaseReservation = resolve;
+    });
+    let reservationInserted: (() => void) | undefined;
+    const reservationIsInserted = new Promise<void>((resolve) => {
+      reservationInserted = resolve;
+    });
+    const concurrentReservation = db.transaction(async (tx) => {
+      await reserveClassSessionForAthleteInTransaction(
+        tx,
+        concurrentSession.id,
+        memberAthleteId,
+        beforeSession,
+      );
+      reservationInserted?.();
+      await reservationCanCommit;
+    });
+    await reservationIsInserted;
+    const concurrentProgramming = programGymDay(
+      gymId,
+      ownerAthleteId,
+      "2027-03-08",
+      workout,
+    );
+    const programmingState = await Promise.race([
+      concurrentProgramming.then(() => "completed" as const),
+      new Promise<"waiting">((resolve) =>
+        setTimeout(() => resolve("waiting"), 100),
+      ),
+    ]);
+    releaseReservation?.();
+    await Promise.all([concurrentReservation, concurrentProgramming]);
+    expect(programmingState).toBe("waiting");
+    await expect(
+      getAssignedWorkoutForAthlete(concurrentSession.id, memberAthleteId),
+    ).resolves.toMatchObject({
+      workout: expect.objectContaining({ name: workout.name }),
+    });
   });
 });
