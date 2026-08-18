@@ -303,6 +303,7 @@ export const loadAdjustments = pgTable(
       .references(() => athletes.id, { onDelete: "cascade" }),
     movementId: text("movement_id").notNull(),
     ratio: numeric("ratio", { precision: 5, scale: 4 }).notNull(),
+    reviewAfterSessions: integer("review_after_sessions").notNull().default(5),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
@@ -314,6 +315,10 @@ export const loadAdjustments = pgTable(
     check(
       "load_adjustments_ratio_check",
       sql`${t.ratio} > 0 and ${t.ratio} <= 1`,
+    ),
+    check(
+      "load_adjustments_review_sessions_check",
+      sql`${t.reviewAfterSessions} > 0`,
     ),
   ],
 );

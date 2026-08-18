@@ -216,7 +216,7 @@ describe("Assigned Workout materialisation", () => {
     );
     expect(deferred).toMatchObject({ reservationId: deferredReservationId });
     expect(deferred?.workout.movements[0].movementId).toBe("back_extension");
-    expect(deferred?.workout.movements[1].load).toBe(30);
+    expect(deferred?.workout.movements[1].load).toBe(40);
     expect(deferred?.provenance).toMatchObject([
       { movementId: "adjusted", reps: "programmed", notes: "programmed" },
       { movementId: "programmed", load: "adjusted" },

@@ -40,6 +40,13 @@ export const assignedWorkoutOverrideSchema = z
     { message: "At least one override is required" },
   );
 
+export const promoteLoadAdjustmentSchema = z.object({
+  classSessionId: z.string().min(1),
+  movementIndex: z.number().int().nonnegative().max(19),
+  reason: z.enum(["capability", "injury"]),
+  reviewAfterSessions: z.number().int().min(1).max(20).default(5),
+});
+
 export const workoutSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1).max(120),
