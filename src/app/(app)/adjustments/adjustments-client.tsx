@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card, EmptyState, PageHeader } from "@/components/ui/card";
 import { FieldRow, Input, Select, Textarea } from "@/components/ui/field";
 import { formatLabel } from "@/lib/format";
+import { localDateInTimeZone } from "@/lib/domain/scheduling/expand-class-schedule";
 
 export function AdjustmentsClient({
   adjustments,
@@ -32,7 +33,10 @@ export function AdjustmentsClient({
   const [severity, setSeverity] = React.useState(ImpedimentSeverity.Moderate);
   const [description, setDescription] = React.useState("");
   const [startDate, setStartDate] = React.useState(() =>
-    new Date().toISOString().slice(0, 10),
+    localDateInTimeZone(
+      new Date(),
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+    ),
   );
   const [endDate, setEndDate] = React.useState("");
 
@@ -75,6 +79,11 @@ export function AdjustmentsClient({
         toast.error("Could not record that Impediment.");
       }
     });
+  }
+
+  function cancelImpediment() {
+    setEditingImpediment(false);
+    router.replace("/adjustments");
   }
 
   return (
@@ -167,7 +176,7 @@ export function AdjustmentsClient({
             <Button variant="primary" disabled={pending} onClick={saveImpediment}>
               Save Impediment
             </Button>
-            <Button disabled={pending} onClick={() => setEditingImpediment(false)}>
+            <Button disabled={pending} onClick={cancelImpediment}>
               Cancel
             </Button>
           </div>

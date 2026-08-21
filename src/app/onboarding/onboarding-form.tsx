@@ -15,6 +15,7 @@ import {
   ImpedimentSeverity,
 } from "@/lib/domain/models/impediment";
 import { titleCase } from "@/lib/format";
+import { localDateInTimeZone } from "@/lib/domain/scheduling/expand-class-schedule";
 
 const PRESETS = [
   { key: "fullGym", label: "Full gym" },
@@ -97,7 +98,10 @@ export function OnboardingForm({ defaultName }: { defaultName: string }) {
           affectedMuscles: d.affectedMuscles,
           affectedJoints: d.affectedJoints,
           description: d.description,
-          startDate: new Date().toISOString().slice(0, 10),
+          startDate: localDateInTimeZone(
+            new Date(),
+            Intl.DateTimeFormat().resolvedOptions().timeZone,
+          ),
           trimester: d.category === ImpedimentCategory.Pregnancy ? (d.trimester ?? 1) : undefined,
           weeksPostpartum:
             d.category === ImpedimentCategory.Postpartum ? (d.weeksPostpartum ?? 0) : undefined,
