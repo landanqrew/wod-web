@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db, pool } from "../db";
 import {
   assignedWorkouts,
@@ -14,14 +14,11 @@ import {
 } from "../db/schema";
 import { getAssignedWorkoutForAthlete } from "../data/assigned-workout";
 import { getClassSessionsForGym } from "../data/gym-class";
+import { getClassSessionRoster, getClassSessionRosterInSnapshot } from "../data/roster";
 import { Joint } from "../domain/models/body";
 import { Equipment } from "../domain/models/equipment";
 import { MembershipRole } from "../domain/models/gym";
-import {
-  buildInjuryConstraints,
-  ImpedimentCategory,
-  ImpedimentSeverity,
-} from "../domain/models/impediment";
+import { buildInjuryConstraints, ImpedimentCategory, ImpedimentSeverity } from "../domain/models/impediment";
 import { ScoreType, WorkoutFormat, type Workout } from "../domain/models/workout";
 import { newId } from "../ids";
 import { createClassForOwner } from "./gym-class";
@@ -64,8 +61,20 @@ beforeAll(async () => {
     { id: memberUserId, name: "Member", email: `${memberUserId}@test.local` },
   ]);
   await db.insert(athletes).values([
-    { id: ownerAthleteId, userId: ownerUserId, name: "Owner", sex: "male", equipment: [] },
-    { id: memberAthleteId, userId: memberUserId, name: "Member", sex: "female", equipment: [] },
+    {
+      id: ownerAthleteId,
+      userId: ownerUserId,
+      name: "Owner",
+      sex: "male",
+      equipment: [],
+    },
+    {
+      id: memberAthleteId,
+      userId: memberUserId,
+      name: "Member",
+      sex: "female",
+      equipment: [],
+    },
   ]);
 });
 
@@ -109,19 +118,10 @@ describe("Assigned Workout materialisation", () => {
     );
     const sessions = await getClassSessionsForGym(gymId, ownerAthleteId, classIds);
     const beforeSession = new Date("2027-02-01T00:00:00Z");
-    const deferredReservationId = await reserveClassSessionForAthlete(
-      sessions[1].id,
-      memberAthleteId,
-      beforeSession,
-    );
-    await expect(
-      getAssignedWorkoutForAthlete(sessions[1].id, memberAthleteId),
-    ).resolves.toBeNull();
+    const deferredReservationId = await reserveClassSessionForAthlete(sessions[1].id, memberAthleteId, beforeSession);
+    await expect(getAssignedWorkoutForAthlete(sessions[1].id, memberAthleteId)).resolves.toBeNull();
 
-    const constraints = buildInjuryConstraints(
-      { muscles: [], joints: [Joint.Knees] },
-      ImpedimentSeverity.Moderate,
-    );
+    const constraints = buildInjuryConstraints({ muscles: [], joints: [Joint.Knees] }, ImpedimentSeverity.Moderate);
     await db.insert(impediments).values({
       id: newId("imp"),
       athleteId: memberAthleteId,
@@ -149,6 +149,56 @@ describe("Assigned Workout materialisation", () => {
       endDate: "2026-02-01",
       constraints: expiredConstraints,
     });
+    await db.insert(impediments).values([
+      {
+        id: newId("imp"),
+        athleteId: memberAthleteId,
+        category: ImpedimentCategory.MobilityLimitation,
+        severity: ImpedimentSeverity.Mild,
+        affectedMuscles: [],
+        affectedJoints: [Joint.Ankles],
+        description: "Starts on Session date",
+        startDate: "2027-03-01",
+        endDate: null,
+        constraints,
+      },
+      {
+        id: newId("imp"),
+        athleteId: memberAthleteId,
+        category: ImpedimentCategory.MobilityLimitation,
+        severity: ImpedimentSeverity.Mild,
+        affectedMuscles: [],
+        affectedJoints: [Joint.Wrists],
+        description: "Ends on Session date",
+        startDate: "2027-02-01",
+        endDate: "2027-03-01",
+        constraints,
+      },
+      {
+        id: newId("imp"),
+        athleteId: memberAthleteId,
+        category: ImpedimentCategory.MobilityLimitation,
+        severity: ImpedimentSeverity.Mild,
+        affectedMuscles: [],
+        affectedJoints: [Joint.Hips],
+        description: "Starts after Session",
+        startDate: "2027-03-02",
+        endDate: null,
+        constraints,
+      },
+      {
+        id: newId("imp"),
+        athleteId: memberAthleteId,
+        category: ImpedimentCategory.MobilityLimitation,
+        severity: ImpedimentSeverity.Mild,
+        affectedMuscles: [],
+        affectedJoints: [Joint.Elbows],
+        description: "Ended before Session",
+        startDate: "2027-02-01",
+        endDate: "2027-02-28",
+        constraints,
+      },
+    ]);
     await db.insert(loadAdjustments).values([
       {
         id: newId("load_adjustment"),
@@ -183,11 +233,18 @@ describe("Assigned Workout materialisation", () => {
       workout,
       programmedByAthleteId: ownerAthleteId,
     });
+    await expect(getClassSessionRoster(sessions[0].id, ownerAthleteId)).resolves.toMatchObject({
+      programmedWorkout: { name: workout.name },
+      athletes: [
+        {
+          athleteId: memberAthleteId,
+          assignedWorkout: null,
+          diffs: [],
+        },
+      ],
+    });
     expect(
-      await db
-        .select()
-        .from(assignedWorkouts)
-        .where(eq(assignedWorkouts.reservationId, legacyReservationId)),
+      await db.select().from(assignedWorkouts).where(eq(assignedWorkouts.reservationId, legacyReservationId)),
     ).toHaveLength(0);
     await ensureAssignedWorkoutsForAthlete(memberAthleteId);
     const [lazyBackfill] = await db
@@ -195,25 +252,16 @@ describe("Assigned Workout materialisation", () => {
       .from(assignedWorkouts)
       .where(eq(assignedWorkouts.reservationId, legacyReservationId));
     expect(lazyBackfill).toBeDefined();
-    await db
-      .delete(assignedWorkouts)
-      .where(eq(assignedWorkouts.reservationId, legacyReservationId));
-    await expect(
-      reserveClassSessionForAthlete(
-        sessions[0].id,
-        memberAthleteId,
-        beforeSession,
-      ),
-    ).resolves.toBe(legacyReservationId);
-    await expect(
-      getAssignedWorkoutForAthlete(sessions[0].id, memberAthleteId),
-    ).resolves.toMatchObject({ reservationId: legacyReservationId });
+    await db.delete(assignedWorkouts).where(eq(assignedWorkouts.reservationId, legacyReservationId));
+    await expect(reserveClassSessionForAthlete(sessions[0].id, memberAthleteId, beforeSession)).resolves.toBe(
+      legacyReservationId,
+    );
+    await expect(getAssignedWorkoutForAthlete(sessions[0].id, memberAthleteId)).resolves.toMatchObject({
+      reservationId: legacyReservationId,
+    });
 
     await programGymDay(gymId, ownerAthleteId, "2027-03-01", workout);
-    const deferred = await getAssignedWorkoutForAthlete(
-      sessions[1].id,
-      memberAthleteId,
-    );
+    const deferred = await getAssignedWorkoutForAthlete(sessions[1].id, memberAthleteId);
     expect(deferred).toMatchObject({ reservationId: deferredReservationId });
     expect(deferred?.workout.movements[0].movementId).toBe("back_extension");
     expect(deferred?.workout.movements[1].load).toBe(40);
@@ -221,61 +269,146 @@ describe("Assigned Workout materialisation", () => {
       { movementId: "adjusted", reps: "programmed", notes: "programmed" },
       { movementId: "programmed", load: "adjusted" },
     ]);
-    expect(deferred?.changes.flatMap(({ explanations }) => explanations).join(" "))
-      .toContain("Load Adjustment");
-    await expect(
-      getAssignedWorkoutForAthlete(sessions[1].id, ownerAthleteId),
-    ).rejects.toThrow("Class Session not found");
-    expect(
-      await reserveClassSessionForAthlete(
-        sessions[1].id,
-        memberAthleteId,
-        beforeSession,
-      ),
-    ).toBe(deferredReservationId);
-    await expect(
-      getAssignedWorkoutForAthlete(sessions[1].id, memberAthleteId),
-    ).resolves.toMatchObject({ id: deferred?.id });
-
-    const immediateReservationId = await reserveClassSessionForAthlete(
-      sessions[0].id,
-      memberAthleteId,
-      beforeSession,
+    expect(deferred?.changes.flatMap(({ explanations }) => explanations).join(" ")).toContain("Load Adjustment");
+    const ownerRoster = await getClassSessionRoster(sessions[1].id, ownerAthleteId);
+    expect(ownerRoster.athletes).toEqual([
+      expect.objectContaining({
+        athleteId: memberAthleteId,
+        athleteName: "Member",
+        diffs: expect.arrayContaining([
+          expect.objectContaining({
+            programmedMovementId: "back_squat",
+            assignedMovementId: "back_extension",
+          }),
+          expect.objectContaining({
+            programmedMovementId: "bench_press",
+            fields: expect.arrayContaining([
+              expect.objectContaining({
+                field: "load",
+                programmedValue: 80,
+                assignedValue: 40,
+                provenance: "adjusted",
+              }),
+            ]),
+          }),
+        ]),
+        activeImpediments: expect.arrayContaining([
+          expect.objectContaining({
+            description: "Knee rehab",
+            affectedJoints: [Joint.Knees],
+          }),
+        ]),
+      }),
+    ]);
+    expect(ownerRoster.athletes[0].activeImpediments.map(({ description }) => description).sort()).toEqual(
+      ["Ends on Session date", "Knee rehab", "Starts on Session date"].sort(),
     );
+
+    const reprogrammedWorkout: Workout = {
+      ...workout,
+      id: newId("wod"),
+      name: "Concurrent reprogram",
+    };
+    const reconciledWorkout: Workout = {
+      ...deferred!.workout,
+      id: newId("wod"),
+      name: "Concurrent reassignment",
+    };
+    let releaseSnapshot: (() => void) | undefined;
+    const snapshotCanRead = new Promise<void>((resolve) => {
+      releaseSnapshot = resolve;
+    });
+    let snapshotEstablished: (() => void) | undefined;
+    const snapshotIsEstablished = new Promise<void>((resolve) => {
+      snapshotEstablished = resolve;
+    });
+    const rosterDuringReprogram = db.transaction(
+      async (tx) => {
+        await tx.execute(
+          sql`select 1 from ${programmedWorkouts} where ${programmedWorkouts.classSessionId} = ${sessions[1].id}`,
+        );
+        snapshotEstablished?.();
+        await snapshotCanRead;
+        return getClassSessionRosterInSnapshot(tx, sessions[1].id, ownerAthleteId);
+      },
+      { isolationLevel: "repeatable read", accessMode: "read only" },
+    );
+    await snapshotIsEstablished;
+    await db.transaction(async (tx) => {
+      await tx
+        .update(programmedWorkouts)
+        .set({ workout: reprogrammedWorkout })
+        .where(eq(programmedWorkouts.classSessionId, sessions[1].id));
+      await tx
+        .update(assignedWorkouts)
+        .set({ workout: reconciledWorkout })
+        .where(eq(assignedWorkouts.reservationId, deferredReservationId));
+    });
+    releaseSnapshot?.();
+    const coherentOldRoster = await rosterDuringReprogram;
+    expect(coherentOldRoster.programmedWorkout?.name).toBe(workout.name);
+    expect(coherentOldRoster.athletes[0].assignedWorkout?.workout.name).toBe(deferred!.workout.name);
+    await expect(getClassSessionRoster(sessions[1].id, ownerAthleteId)).resolves.toMatchObject({
+      programmedWorkout: { name: reprogrammedWorkout.name },
+      athletes: [
+        expect.objectContaining({
+          assignedWorkout: expect.objectContaining({
+            workout: expect.objectContaining({ name: reconciledWorkout.name }),
+          }),
+        }),
+      ],
+    });
+    await db.transaction(async (tx) => {
+      await tx.update(programmedWorkouts).set({ workout }).where(eq(programmedWorkouts.classSessionId, sessions[1].id));
+      await tx
+        .update(assignedWorkouts)
+        .set({ workout: deferred!.workout })
+        .where(eq(assignedWorkouts.reservationId, deferredReservationId));
+    });
+    await grantGymMembership(gymId, ownerAthleteId, {
+      email: `${memberUserId}@test.local`,
+      role: MembershipRole.Coach,
+    });
+    await expect(getClassSessionRoster(sessions[1].id, memberAthleteId)).resolves.toMatchObject({
+      classSessionId: sessions[1].id,
+    });
+    await grantGymMembership(gymId, ownerAthleteId, {
+      email: `${memberUserId}@test.local`,
+      role: MembershipRole.Member,
+    });
+    await expect(getClassSessionRoster(sessions[1].id, memberAthleteId)).rejects.toThrow("Gym not found");
+    await expect(getAssignedWorkoutForAthlete(sessions[1].id, ownerAthleteId)).rejects.toThrow(
+      "Class Session not found",
+    );
+    expect(await reserveClassSessionForAthlete(sessions[1].id, memberAthleteId, beforeSession)).toBe(
+      deferredReservationId,
+    );
+    await expect(getAssignedWorkoutForAthlete(sessions[1].id, memberAthleteId)).resolves.toMatchObject({
+      id: deferred?.id,
+    });
+
+    const immediateReservationId = await reserveClassSessionForAthlete(sessions[0].id, memberAthleteId, beforeSession);
     expect(immediateReservationId).toBe(legacyReservationId);
-    await expect(
-      getAssignedWorkoutForAthlete(sessions[0].id, memberAthleteId),
-    ).resolves.toMatchObject({ reservationId: immediateReservationId });
+    await expect(getAssignedWorkoutForAthlete(sessions[0].id, memberAthleteId)).resolves.toMatchObject({
+      reservationId: immediateReservationId,
+    });
 
     const oldAssignedId = deferred!.id;
-    await expect(
-      cancelReservationForAthlete(sessions[1].id, memberAthleteId),
-    ).resolves.toEqual({
+    await expect(cancelReservationForAthlete(sessions[1].id, memberAthleteId)).resolves.toEqual({
       cancelled: false,
       requiresAssignedWorkoutConfirmation: true,
     });
-    await expect(
-      getAssignedWorkoutForAthlete(sessions[1].id, memberAthleteId),
-    ).resolves.toMatchObject({ id: oldAssignedId });
-    await expect(
-      cancelReservationForAthlete(sessions[1].id, memberAthleteId, true),
-    ).resolves.toEqual({ cancelled: true, discardedAssignedWorkout: true });
-    expect(
-      await db
-        .select()
-        .from(assignedWorkouts)
-        .where(eq(assignedWorkouts.id, oldAssignedId)),
-    ).toHaveLength(0);
+    await expect(getAssignedWorkoutForAthlete(sessions[1].id, memberAthleteId)).resolves.toMatchObject({
+      id: oldAssignedId,
+    });
+    await expect(cancelReservationForAthlete(sessions[1].id, memberAthleteId, true)).resolves.toEqual({
+      cancelled: true,
+      discardedAssignedWorkout: true,
+    });
+    expect(await db.select().from(assignedWorkouts).where(eq(assignedWorkouts.id, oldAssignedId))).toHaveLength(0);
 
-    const newReservationId = await reserveClassSessionForAthlete(
-      sessions[1].id,
-      memberAthleteId,
-      beforeSession,
-    );
-    const fresh = await getAssignedWorkoutForAthlete(
-      sessions[1].id,
-      memberAthleteId,
-    );
+    const newReservationId = await reserveClassSessionForAthlete(sessions[1].id, memberAthleteId, beforeSession);
+    const fresh = await getAssignedWorkoutForAthlete(sessions[1].id, memberAthleteId);
     expect(fresh).toMatchObject({ reservationId: newReservationId });
     expect(fresh?.id).not.toBe(oldAssignedId);
 
@@ -291,11 +424,7 @@ describe("Assigned Workout materialisation", () => {
       },
       { startDate: "2027-03-08", endDate: "2027-03-08" },
     );
-    const [concurrentSession] = await getClassSessionsForGym(
-      gymId,
-      ownerAthleteId,
-      [concurrentClassId],
-    );
+    const [concurrentSession] = await getClassSessionsForGym(gymId, ownerAthleteId, [concurrentClassId]);
     let releaseReservation: (() => void) | undefined;
     const reservationCanCommit = new Promise<void>((resolve) => {
       releaseReservation = resolve;
@@ -305,34 +434,20 @@ describe("Assigned Workout materialisation", () => {
       reservationInserted = resolve;
     });
     const concurrentReservation = db.transaction(async (tx) => {
-      await reserveClassSessionForAthleteInTransaction(
-        tx,
-        concurrentSession.id,
-        memberAthleteId,
-        beforeSession,
-      );
+      await reserveClassSessionForAthleteInTransaction(tx, concurrentSession.id, memberAthleteId, beforeSession);
       reservationInserted?.();
       await reservationCanCommit;
     });
     await reservationIsInserted;
-    const concurrentProgramming = programGymDay(
-      gymId,
-      ownerAthleteId,
-      "2027-03-08",
-      workout,
-    );
+    const concurrentProgramming = programGymDay(gymId, ownerAthleteId, "2027-03-08", workout);
     const programmingState = await Promise.race([
       concurrentProgramming.then(() => "completed" as const),
-      new Promise<"waiting">((resolve) =>
-        setTimeout(() => resolve("waiting"), 100),
-      ),
+      new Promise<"waiting">((resolve) => setTimeout(() => resolve("waiting"), 100)),
     ]);
     releaseReservation?.();
     await Promise.all([concurrentReservation, concurrentProgramming]);
     expect(programmingState).toBe("waiting");
-    await expect(
-      getAssignedWorkoutForAthlete(concurrentSession.id, memberAthleteId),
-    ).resolves.toMatchObject({
+    await expect(getAssignedWorkoutForAthlete(concurrentSession.id, memberAthleteId)).resolves.toMatchObject({
       workout: expect.objectContaining({ name: workout.name }),
     });
   });
