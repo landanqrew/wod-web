@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull, lt, notInArray, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, lt, notInArray } from "drizzle-orm";
 import { db } from "../db";
 import {
   classSessions,
@@ -51,20 +51,27 @@ async function lockProgrammingGymInTransaction(
   const [gym] = await tx
     .select({ recoveryWindowHours: gyms.recoveryWindowHours })
     .from(gyms)
-    .where(
-      and(
-        eq(gyms.id, gymId),
-        sql`exists (
-          select 1 from ${memberships}
-          where ${memberships.gymId} = ${gyms.id}
-            and ${memberships.athleteId} = ${athleteId}
-            and ${memberships.role} in (${MembershipRole.Owner}, ${MembershipRole.Coach})
-        )`,
-      ),
-    )
+    .where(eq(gyms.id, gymId))
     .limit(1)
     .for("update", { of: gyms });
   if (!gym) throw new Error(notFoundMessage);
+  const [membership] = await tx
+    .select({ role: memberships.role })
+    .from(memberships)
+    .where(
+      and(
+        eq(memberships.gymId, gymId),
+        eq(memberships.athleteId, athleteId),
+      ),
+    )
+    .limit(1)
+    .for("key share");
+  if (
+    membership?.role !== MembershipRole.Owner &&
+    membership?.role !== MembershipRole.Coach
+  ) {
+    throw new Error(notFoundMessage);
+  }
   return gym.recoveryWindowHours;
 }
 

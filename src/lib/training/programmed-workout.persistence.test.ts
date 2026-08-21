@@ -1,8 +1,8 @@
 import "dotenv/config";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db, pool } from "../db";
-import { athletes, gyms, users, workouts } from "../db/schema";
+import { athletes, gyms, memberships, users, workouts } from "../db/schema";
 import {
   getClassSessionsForGym,
   getUpcomingClassSessionsForAthlete,
@@ -455,5 +455,56 @@ describe("Programmed Workouts", () => {
         );
       }),
     ).toBe(true);
+
+    let releaseRevocation: (() => void) | undefined;
+    const revocationCanCommit = new Promise<void>((resolve) => {
+      releaseRevocation = resolve;
+    });
+    let membershipDeleted: (() => void) | undefined;
+    const membershipIsDeleted = new Promise<void>((resolve) => {
+      membershipDeleted = resolve;
+    });
+    const blockingRevocation = db.transaction(async (tx) => {
+      await tx
+        .select({ athleteId: memberships.athleteId })
+        .from(memberships)
+        .where(
+          and(
+            eq(memberships.gymId, gymId!),
+            eq(memberships.athleteId, coachAthleteId),
+          ),
+        )
+        .for("update");
+      await tx
+        .delete(memberships)
+        .where(
+          and(
+            eq(memberships.gymId, gymId!),
+            eq(memberships.athleteId, coachAthleteId),
+          ),
+        );
+      membershipDeleted?.();
+      await revocationCanCommit;
+    });
+    await membershipIsDeleted;
+    const revokedCoachProgramming = programGymDay(
+      gymId,
+      coachAthleteId,
+      "2027-03-15",
+      manualWorkout,
+    );
+    const revokedCoachState = await Promise.race([
+      revokedCoachProgramming.then(
+        () => "completed" as const,
+        () => "denied" as const,
+      ),
+      new Promise<"waiting">((resolve) =>
+        setTimeout(() => resolve("waiting"), 100),
+      ),
+    ]);
+    releaseRevocation?.();
+    await blockingRevocation;
+    expect(revokedCoachState).toBe("waiting");
+    await expect(revokedCoachProgramming).rejects.toThrow("Gym not found");
   });
 });
