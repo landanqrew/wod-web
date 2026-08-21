@@ -10,21 +10,16 @@ import {
   memberships,
   programmedWorkouts,
   reservations,
+  workoutResults,
 } from "../db/schema";
 import { GymPermission } from "../domain/models/gym";
-import type {
-  ClassSessionSummary,
-  GymClass,
-} from "../domain/models/gym-class";
+import type { ClassSessionSummary, GymClass } from "../domain/models/gym-class";
 import type { WeeklyClassTime } from "../domain/scheduling/expand-class-schedule";
 import { requireGymPermission } from "./gym";
 
 const sessionCoaches = alias(athletes, "session_coaches");
 
-export async function getClassesForGym(
-  gymId: string,
-  athleteId: string,
-): Promise<GymClass[]> {
+export async function getClassesForGym(gymId: string, athleteId: string): Promise<GymClass[]> {
   await requireGymPermission(gymId, athleteId, GymPermission.View);
   const rows = await db
     .select({ class: gymClasses, coachName: athletes.name })
@@ -47,7 +42,7 @@ export async function getClassesForGym(
 export async function getUpcomingClassSessionsForAthlete(
   athleteId: string,
   from: Date,
-  gymId?: string,
+  gymId?: string
 ): Promise<ClassSessionSummary[]> {
   const rows = await db
     .select({
@@ -68,27 +63,19 @@ export async function getUpcomingClassSessionsForAthlete(
         select 1 from ${programmedWorkouts}
         where ${programmedWorkouts.classSessionId} = ${classSessions.id}
       )`,
+      resultLogged: sql<boolean>`exists (
+        select 1 from ${workoutResults}
+        where ${workoutResults.classSessionId} = ${classSessions.id}
+          and ${workoutResults.athleteId} = ${athleteId}
+      )`,
     })
     .from(classSessions)
     .innerJoin(gymClasses, eq(gymClasses.id, classSessions.classId))
     .innerJoin(gyms, eq(gyms.id, gymClasses.gymId))
-    .innerJoin(
-      memberships,
-      and(
-        eq(memberships.gymId, gyms.id),
-        eq(memberships.athleteId, athleteId),
-      ),
-    )
-    .leftJoin(
-      sessionCoaches,
-      eq(sessionCoaches.id, classSessions.coachAthleteId),
-    )
+    .innerJoin(memberships, and(eq(memberships.gymId, gyms.id), eq(memberships.athleteId, athleteId)))
+    .leftJoin(sessionCoaches, eq(sessionCoaches.id, classSessions.coachAthleteId))
     .where(
-      and(
-        gte(classSessions.startsAt, from),
-        isNull(classSessions.cancelledAt),
-        gymId ? eq(gyms.id, gymId) : undefined,
-      ),
+      and(gte(classSessions.startsAt, from), isNull(classSessions.cancelledAt), gymId ? eq(gyms.id, gymId) : undefined)
     )
     .orderBy(asc(classSessions.startsAt));
 
@@ -107,13 +94,14 @@ export async function getUpcomingClassSessionsForAthlete(
     reservationCount: row.reservationCount,
     reserved: row.reserved,
     workoutPosted: row.workoutPosted,
+    resultLogged: row.resultLogged,
   }));
 }
 
 export async function getClassSessionsForGym(
   gymId: string,
   athleteId: string,
-  classIds: string[],
+  classIds: string[]
 ): Promise<ClassSessionSummary[]> {
   await requireGymPermission(gymId, athleteId, GymPermission.View);
   if (classIds.length === 0) return [];
@@ -137,20 +125,17 @@ export async function getClassSessionsForGym(
         select 1 from ${programmedWorkouts}
         where ${programmedWorkouts.classSessionId} = ${classSessions.id}
       )`,
+      resultLogged: sql<boolean>`exists (
+        select 1 from ${workoutResults}
+        where ${workoutResults.classSessionId} = ${classSessions.id}
+          and ${workoutResults.athleteId} = ${athleteId}
+      )`,
     })
     .from(classSessions)
     .innerJoin(gymClasses, eq(gymClasses.id, classSessions.classId))
     .innerJoin(gyms, eq(gyms.id, gymClasses.gymId))
-    .leftJoin(
-      sessionCoaches,
-      eq(sessionCoaches.id, classSessions.coachAthleteId),
-    )
-    .where(
-      and(
-        eq(gyms.id, gymId),
-        inArray(classSessions.classId, classIds),
-      ),
-    )
+    .leftJoin(sessionCoaches, eq(sessionCoaches.id, classSessions.coachAthleteId))
+    .where(and(eq(gyms.id, gymId), inArray(classSessions.classId, classIds)))
     .orderBy(asc(classSessions.startsAt));
 
   return rows.map((row) => ({
@@ -168,13 +153,11 @@ export async function getClassSessionsForGym(
     reservationCount: row.reservationCount,
     reserved: row.reserved,
     workoutPosted: row.workoutPosted,
+    resultLogged: row.resultLogged,
   }));
 }
 
-export async function getClassSessionHeadcount(
-  classSessionId: string,
-  athleteId: string,
-): Promise<number> {
+export async function getClassSessionHeadcount(classSessionId: string, athleteId: string): Promise<number> {
   const [session] = await db
     .select({ gymId: gymClasses.gymId })
     .from(classSessions)

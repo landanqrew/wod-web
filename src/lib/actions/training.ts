@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { trainingSessions, workoutResults } from "@/lib/db/schema";
 import { requireAthlete } from "@/lib/data/athlete";
 import { hydrateWorkout } from "@/lib/data/training";
-import { logResultForAthlete, upsertWorkout } from "@/lib/training/log";
+import { logAssignedWorkoutResultForAthlete, logResultForAthlete, upsertWorkout } from "@/lib/training/log";
 import { newId } from "@/lib/ids";
 import { generateOptionsSchema, saveSessionSchema, workoutSchema } from "@/lib/validation";
 import { generateWorkout } from "@/lib/domain/generator/workout-generator";
@@ -102,10 +102,18 @@ export async function logResultAction(raw: unknown): Promise<{
   return logged;
 }
 
+export async function logAssignedWorkoutResultAction(
+  classSessionId: string,
+  raw: unknown
+): Promise<{ result: WorkoutResult; prs: PersonalRecord[] }> {
+  const athlete = await requireAthlete();
+  const logged = await logAssignedWorkoutResultForAthlete(classSessionId, athlete.id, raw);
+  revalidatePath("/", "layout");
+  return logged;
+}
+
 export async function deleteResultAction(resultId: string) {
   const athlete = await requireAthlete();
-  await db
-    .delete(workoutResults)
-    .where(and(eq(workoutResults.id, resultId), eq(workoutResults.athleteId, athlete.id)));
+  await db.delete(workoutResults).where(and(eq(workoutResults.id, resultId), eq(workoutResults.athleteId, athlete.id)));
   revalidatePath("/", "layout");
 }
