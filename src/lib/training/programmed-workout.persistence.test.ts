@@ -28,6 +28,7 @@ import { upsertWorkout } from "./log";
 import {
   generateProgrammedWorkoutForGymDay,
   programGymDay,
+  programGymDayInTransaction,
   updateProgrammedWorkoutForSession,
 } from "./programmed-workout";
 import { reserveClassSessionForAthlete } from "./reservation";
@@ -373,6 +374,84 @@ describe("Programmed Workouts", () => {
         const movement = getMovementOrThrow(prescription.movementId);
         return [...movement.primaryMuscles, ...movement.secondaryMuscles].every(
           (muscle) => !recovering.has(muscle),
+        );
+      }),
+    ).toBe(true);
+
+    const concurrentClassId = await createClassForOwner(
+      gymId,
+      ownerAthleteId,
+      {
+        name: "Concurrent Recovery Window",
+        coachAthleteId,
+        weeklyTimes: [
+          { dayOfWeek: 0, localTime: "08:00" },
+          { dayOfWeek: 1, localTime: "06:00" },
+        ],
+        timeZone: "America/Chicago",
+        capacity: 20,
+      },
+      { startDate: "2027-03-14", endDate: "2027-03-15" },
+    );
+    let releaseStrength: (() => void) | undefined;
+    const strengthCanCommit = new Promise<void>((resolve) => {
+      releaseStrength = resolve;
+    });
+    let strengthWritten: (() => void) | undefined;
+    const strengthIsWritten = new Promise<void>((resolve) => {
+      strengthWritten = resolve;
+    });
+    const concurrentStrength = db.transaction(async (tx) => {
+      await programGymDayInTransaction(
+        tx,
+        gymId!,
+        coachAthleteId,
+        "2027-03-14",
+        manualWorkout,
+      );
+      strengthWritten?.();
+      await strengthCanCommit;
+    });
+    await strengthIsWritten;
+    const concurrentGeneration = generateProgrammedWorkoutForGymDay(
+      gymId,
+      coachAthleteId,
+      "2027-03-15",
+      { format: WorkoutFormat.AMRAP, movementCount: 3 },
+    );
+    const generationState = await Promise.race([
+      concurrentGeneration.then(() => "completed" as const),
+      new Promise<"waiting">((resolve) =>
+        setTimeout(() => resolve("waiting"), 100),
+      ),
+    ]);
+    releaseStrength?.();
+    const [, concurrentResult] = await Promise.all([
+      concurrentStrength,
+      concurrentGeneration,
+    ]);
+    expect(generationState).toBe("waiting");
+    expect(concurrentResult.recoveringMuscles).toEqual(
+      expect.arrayContaining([Muscle.Quads, Muscle.Glutes]),
+    );
+    const concurrentSessions = await getClassSessionsForGym(
+      gymId,
+      ownerAthleteId,
+      [concurrentClassId],
+    );
+    const concurrentTarget = concurrentSessions.find(
+      ({ localDate }) => localDate === "2027-03-15",
+    );
+    const concurrentView = await getProgrammedWorkoutForSession(
+      concurrentTarget!.id,
+      ownerAthleteId,
+    );
+    const concurrentRecovering = new Set(concurrentResult.recoveringMuscles);
+    expect(
+      concurrentView?.workout.movements.every((prescription) => {
+        const movement = getMovementOrThrow(prescription.movementId);
+        return [...movement.primaryMuscles, ...movement.secondaryMuscles].every(
+          (muscle) => !concurrentRecovering.has(muscle),
         );
       }),
     ).toBe(true);
