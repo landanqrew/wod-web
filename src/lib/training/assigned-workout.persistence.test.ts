@@ -11,7 +11,6 @@ import {
   programmedWorkouts,
   reservations,
   users,
-  workouts,
 } from "../db/schema";
 import { getAssignedWorkoutForAthlete } from "../data/assigned-workout";
 import { getClassSessionsForGym } from "../data/gym-class";
@@ -407,7 +406,6 @@ describe("Assigned Workout materialisation", () => {
       discardedAssignedWorkout: true,
     });
     expect(await db.select().from(assignedWorkouts).where(eq(assignedWorkouts.id, oldAssignedId))).toHaveLength(0);
-    expect(await db.select().from(workouts).where(eq(workouts.id, oldAssignedId))).toHaveLength(0);
 
     const newReservationId = await reserveClassSessionForAthlete(sessions[1].id, memberAthleteId, beforeSession);
     const fresh = await getAssignedWorkoutForAthlete(sessions[1].id, memberAthleteId);

@@ -6,6 +6,7 @@ import { rowToImpediment } from "./mappers";
 import { EQUIPMENT_PRESETS } from "../domain/models/equipment";
 import { getMovementOrThrow } from "../domain/movements/library";
 import { checkMovement } from "../domain/scaling/constraint-engine";
+import { BENCHMARK_LIBRARY } from "../domain/generator/benchmark-library";
 
 const client = new Client({ connectionString: process.env.DATABASE_URL });
 
@@ -251,10 +252,20 @@ describe("Gym Library migration", () => {
           movements jsonb NOT NULL DEFAULT '[]'
         );
         INSERT INTO gyms (id) VALUES ('gym-1');
-        INSERT INTO workouts (id, name, movements) VALUES
-          ('legacy-workout', 'Legacy', '[]'),
-          ('benchmark_fran', 'Fran', '[{"movementId":"thruster","reps":21,"load":95,"notes":"21-15-9"},{"movementId":"pull_up","reps":21}]');
+        INSERT INTO workouts (id, name, movements) VALUES ('legacy-workout', 'Legacy', '[]');
       `);
+      const weightedBenchmarks = BENCHMARK_LIBRARY.filter((workout) =>
+        workout.movements.some((movement) => movement.rxLoad !== undefined),
+      );
+      for (const workout of weightedBenchmarks) {
+        const legacyMovements = workout.movements.map(
+          ({ movement: _movement, rxLoad: _rxLoad, ...movement }) => movement,
+        );
+        await client.query(
+          `INSERT INTO workouts (id, name, movements) VALUES ($1, $2, $3)`,
+          [workout.id, workout.name, JSON.stringify(legacyMovements)],
+        );
+      }
       const migration = (
         await readFile(
           new URL("../../../drizzle/0012_even_cable.sql", import.meta.url),
@@ -264,39 +275,39 @@ describe("Gym Library migration", () => {
       for (const statement of migration.split("--> statement-breakpoint")) {
         if (statement.trim()) await client.query(statement);
       }
-      const legacy = await client.query(
+      const migrated = await client.query<{
+        id: string;
+        gym_id: string | null;
+        has_updated_at: boolean;
+        movements: Array<{ movementId: string; load?: number; rxLoad?: unknown }>;
+      }>(
         `SELECT id, gym_id, updated_at IS NOT NULL AS has_updated_at, movements FROM workouts ORDER BY id`,
       );
-      expect(legacy.rows).toEqual([
-        {
-          id: "benchmark_fran",
-          gym_id: null,
-          has_updated_at: true,
-          movements: [
-            {
-              movementId: "thruster",
-              reps: 21,
-              load: 95,
-              notes: "21-15-9",
-              rxLoad: { male: 95, female: 65 },
-            },
-            { movementId: "pull_up", reps: 21 },
-          ],
-        },
-        {
-          id: "legacy-workout",
-          gym_id: null,
-          has_updated_at: true,
-          movements: [],
-        },
-      ]);
+      expect(migrated.rows).toHaveLength(weightedBenchmarks.length + 1);
+      expect(migrated.rows.find(({ id }) => id === "legacy-workout")).toEqual({
+        id: "legacy-workout",
+        gym_id: null,
+        has_updated_at: true,
+        movements: [],
+      });
+      for (const workout of weightedBenchmarks) {
+        const row = migrated.rows.find(({ id }) => id === workout.id);
+        expect(row).toMatchObject({ gym_id: null, has_updated_at: true });
+        for (const [index, movement] of workout.movements.entries()) {
+          expect(row?.movements[index]).toMatchObject({
+            movementId: movement.movementId,
+            ...(movement.load === undefined ? {} : { load: movement.load }),
+            ...(movement.rxLoad === undefined ? {} : { rxLoad: movement.rxLoad }),
+          });
+        }
+      }
       await client.query(
         `UPDATE workouts SET gym_id = 'gym-1' WHERE id = 'legacy-workout'`,
       );
       await client.query(`DELETE FROM gyms WHERE id = 'gym-1'`);
-      expect((await client.query(`SELECT id FROM workouts`)).rows).toEqual([
-        { id: "benchmark_fran" },
-      ]);
+      expect(
+        (await client.query(`SELECT id FROM workouts WHERE id = 'legacy-workout'`)).rows,
+      ).toEqual([]);
     } finally {
       await client.query("ROLLBACK");
     }
