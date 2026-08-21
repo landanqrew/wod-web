@@ -9,6 +9,7 @@ import {
   notInArray,
 } from "drizzle-orm";
 import { db } from "../db";
+import { rowToWorkout } from "../db/mappers";
 import {
   classSessions,
   gymClasses,
@@ -32,6 +33,7 @@ import type { StationWarning } from "../domain/programming";
 import type { Muscle } from "../domain/models/body";
 import { getMovement } from "../domain/movements/library";
 import type { Workout } from "../domain/models/workout";
+import { changeProgrammedWorkoutFormat } from "../domain/programming/manual-workout";
 import { newId } from "../ids";
 import { programmedWorkoutSchema } from "../validation";
 import { materialiseAssignedWorkout } from "./assigned-workout";
@@ -45,6 +47,26 @@ export interface ProgrammedWorkoutWriteResult {
 
 export interface SessionStationWarning extends StationWarning {
   classSessionId: string;
+}
+
+export function toProgrammedSourceWorkout(source: Workout): Workout {
+  const withFormatDefaults = {
+    ...changeProgrammedWorkoutFormat(source, source.format),
+    ...source,
+  };
+  return {
+    ...withFormatDefaults,
+    movements: source.movements.map((prescription) => {
+      if (prescription.load === undefined) return prescription;
+      const movement = getMovement(prescription.movementId);
+      if (!movement || movement.loadType !== "weighted") return prescription;
+      if (!prescription.rxLoad) {
+        throw new Error(`Source Workout lacks a female Rx load for ${movement.name}`);
+      }
+      const { load, ...withoutLoad } = prescription;
+      return withoutLoad;
+    }),
+  };
 }
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -100,7 +122,7 @@ async function findSessionStationWarningsInTransaction(
   );
 }
 
-async function lockProgrammingGymInTransaction(
+export async function lockProgrammingGymInTransaction(
   tx: Transaction,
   gymId: string,
   athleteId: string,
@@ -214,7 +236,7 @@ async function deriveRecoveryMusclesInTransaction(
   return recovering;
 }
 
-function parseProgrammedWorkout(raw: unknown): Workout {
+export function parseProgrammedWorkout(raw: unknown): Workout {
   const parsed = programmedWorkoutSchema.parse(raw);
   for (const prescription of parsed.movements) {
     if (prescription.load !== undefined) {
@@ -234,15 +256,19 @@ function parseProgrammedWorkout(raw: unknown): Workout {
 
 async function assertSourceWorkoutExists(
   tx: Transaction,
+  gymId: string,
   sourceWorkoutId: string | null,
 ) {
   if (!sourceWorkoutId) return;
   const [source] = await tx
-    .select({ id: workouts.id })
+    .select({ id: workouts.id, gymId: workouts.gymId, isBenchmark: workouts.isBenchmark })
     .from(workouts)
     .where(eq(workouts.id, sourceWorkoutId))
     .limit(1);
   if (!source) throw new Error("Source Workout not found");
+  if (source.gymId !== gymId && !(source.gymId === null && source.isBenchmark)) {
+    throw new Error("Source Workout not found");
+  }
 }
 
 async function persistGymDayInTransaction(
@@ -321,7 +347,7 @@ export async function programGymDayInTransaction(
     windowHours,
   );
   const workout = parseProgrammedWorkout(rawWorkout);
-  await assertSourceWorkoutExists(tx, sourceWorkoutId);
+  await assertSourceWorkoutExists(tx, gymId, sourceWorkoutId);
   const floorRows = await tx
     .select({
       equipment: gymEquipment.equipment,
@@ -370,6 +396,39 @@ export async function programGymDay(
       sourceWorkoutId,
     ),
   );
+}
+
+export async function programGymDayFromSource(
+  gymId: string,
+  athleteId: string,
+  localDate: string,
+  sourceWorkoutId: string,
+  rawWorkout?: unknown,
+): Promise<ProgrammedWorkoutWriteResult> {
+  return db.transaction(async (tx) => {
+    await lockProgrammingGymInTransaction(tx, gymId, athleteId, "Gym not found");
+    const [source] = await tx
+      .select()
+      .from(workouts)
+      .where(eq(workouts.id, sourceWorkoutId))
+      .limit(1);
+    if (
+      !source ||
+      (source.gymId !== gymId && !(source.gymId === null && source.isBenchmark))
+    ) {
+      throw new Error("Source Workout not found");
+    }
+    return programGymDayInTransaction(
+      tx,
+      gymId,
+      athleteId,
+      localDate,
+      toProgrammedSourceWorkout(
+        (rawWorkout as Workout | undefined) ?? rowToWorkout(source),
+      ),
+      sourceWorkoutId,
+    );
+  });
 }
 
 export async function generateProgrammedWorkoutForGymDay(

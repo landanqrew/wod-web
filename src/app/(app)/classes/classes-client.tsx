@@ -11,19 +11,25 @@ import { cancelReservationAction, reserveClassSessionAction } from "@/lib/action
 import {
   generateGymDayAction,
   programGymDayAction,
+  programGymDayFromSourceAction,
   updateSessionProgrammedWorkoutAction,
 } from "@/lib/actions/programmed-workout";
 import { overrideAssignedWorkoutAction } from "@/lib/actions/assigned-workout";
 import { promoteLoadAdjustmentAction } from "@/lib/actions/load-adjustment";
 import { getClassSessionRosterAction } from "@/lib/actions/roster";
+import {
+  saveGymLibraryWorkoutAction,
+  updateGymLibraryWorkoutAction,
+} from "@/lib/actions/gym-library";
 import { MembershipRole, type Gym, type GymMember } from "@/lib/domain/models/gym";
 import type { AssignedWorkout } from "@/lib/domain/models/assigned-workout";
 import type { ClassSessionSummary, GymClass } from "@/lib/domain/models/gym-class";
 import type { ClassSessionRoster } from "@/lib/domain/models/roster";
+import type { GymLibraryWorkout } from "@/lib/domain/models/gym-library";
 import { ScoreType, WorkoutFormat, type MovementPrescription, type Workout } from "@/lib/domain/models/workout";
 import { changeProgrammedWorkoutFormat, createManualProgrammedWorkout } from "@/lib/domain/programming/manual-workout";
 import type { WeeklyClassTime } from "@/lib/domain/scheduling/expand-class-schedule";
-import { formatLabel, prescriptionLine } from "@/lib/format";
+import { formatLabel, formatScore, prescriptionLine } from "@/lib/format";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -43,6 +49,8 @@ type ProgrammingDraft = {
   localDate: string;
   workout: Workout;
   movementsJson: string;
+  sourceWorkoutId?: string;
+  libraryWorkoutId?: string;
 };
 
 type ProgrammingNumberField = "timeCap" | "rounds" | "workInterval" | "restInterval" | "emomMinutes";
@@ -77,6 +85,8 @@ export function ClassesClient({
   classesByGym,
   coachesByGym,
   movementOptionsBySession,
+  libraryWorkoutsByGym,
+  globalBenchmarks,
 }: {
   gyms: Gym[];
   upcomingSessions: ClassSessionSummary[];
@@ -85,6 +95,8 @@ export function ClassesClient({
   classesByGym: Record<string, GymClass[]>;
   coachesByGym: Record<string, GymMember[]>;
   movementOptionsBySession: Record<string, Array<{ id: string; name: string; loadType: string; available: boolean }>>;
+  libraryWorkoutsByGym: Record<string, GymLibraryWorkout[]>;
+  globalBenchmarks: Workout[];
 }) {
   const router = useRouter();
   const ownerGyms = gyms.filter(({ membershipRole }) => membershipRole === MembershipRole.Owner);
@@ -92,6 +104,7 @@ export function ClassesClient({
   const [draft, setDraft] = React.useState<Draft | null>(null);
   const [programmingDraft, setProgrammingDraft] = React.useState<ProgrammingDraft | null>(null);
   const [programmingDate, setProgrammingDate] = React.useState("");
+  const [sourceSelection, setSourceSelection] = React.useState("");
   const [overrideDraft, setOverrideDraft] = React.useState<OverrideDraft | null>(null);
   const [promotionPrompt, setPromotionPrompt] = React.useState<PromotionPrompt | null>(null);
   const [rosterSessionId, setRosterSessionId] = React.useState<string | null>(null);
@@ -216,6 +229,46 @@ export function ClassesClient({
     });
   }
 
+  function beginFromSource(localDate: string) {
+    if (!selectedGym || !sourceSelection) return;
+    const source = [
+      ...(libraryWorkoutsByGym[selectedGym.id] ?? [])
+        .filter(({ sourceKind }) => sourceKind === "gym")
+        .map(({ workout }) => workout),
+      ...globalBenchmarks,
+    ].find(({ id }) => id === sourceSelection);
+    if (!source) return;
+    setProgrammingDraft({
+      gymId: selectedGym.id,
+      localDate,
+      sourceWorkoutId: source.id,
+      workout: source,
+      movementsJson: JSON.stringify(source.movements, null, 2),
+    });
+  }
+
+  function beginLibraryEdit(workout: Workout) {
+    if (!selectedGym) return;
+    setProgrammingDraft({
+      gymId: selectedGym.id,
+      localDate: effectiveProgrammingDate,
+      libraryWorkoutId: workout.id,
+      workout,
+      movementsJson: JSON.stringify(workout.movements, null, 2),
+    });
+  }
+
+  function beginLibraryCreate() {
+    if (!selectedGym) return;
+    const workout = createManualProgrammedWorkout();
+    setProgrammingDraft({
+      gymId: selectedGym.id,
+      localDate: effectiveProgrammingDate,
+      workout,
+      movementsJson: JSON.stringify(workout.movements, null, 2),
+    });
+  }
+
   function beginProgrammedWorkoutEdit(session: ClassSessionSummary) {
     const workout = programmedWorkoutsBySession[session.id];
     if (!workout) return;
@@ -240,6 +293,13 @@ export function ClassesClient({
         const workout = { ...programmingDraft.workout, movements };
         const result = programmingDraft.sessionId
           ? await updateSessionProgrammedWorkoutAction(programmingDraft.sessionId, workout)
+          : programmingDraft.sourceWorkoutId
+            ? await programGymDayFromSourceAction(
+                programmingDraft.gymId,
+                programmingDraft.localDate,
+                programmingDraft.sourceWorkoutId,
+                workout,
+              )
           : await programGymDayAction(programmingDraft.gymId, programmingDraft.localDate, workout);
         toast.success(
           programmingDraft.sessionId ? "Class Session workout updated" : "Workout programmed for the gym-day",
@@ -256,6 +316,37 @@ export function ClassesClient({
         refreshClasses();
       } catch {
         toast.error("Could not save that Programmed Workout. Check the prescription.");
+      }
+    });
+  }
+
+  function saveDraftToLibrary() {
+    if (!programmingDraft) return;
+    startTransition(async () => {
+      try {
+        const movements = JSON.parse(programmingDraft.movementsJson) as MovementPrescription[];
+        const workout = {
+          ...programmingDraft.workout,
+          movements,
+        };
+        if (programmingDraft.libraryWorkoutId) {
+          await updateGymLibraryWorkoutAction(
+            programmingDraft.gymId,
+            programmingDraft.libraryWorkoutId,
+            workout,
+          );
+        } else {
+          await saveGymLibraryWorkoutAction(programmingDraft.gymId, workout);
+        }
+        toast.success(
+          programmingDraft.libraryWorkoutId
+            ? "Gym Library Workout updated"
+            : "Workout saved to the Gym Library",
+        );
+        setProgrammingDraft(null);
+        refreshClasses();
+      } catch {
+        toast.error("Could not save that Gym Library Workout.");
       }
     });
   }
@@ -434,7 +525,14 @@ export function ClassesClient({
       {gyms.length > 1 ? (
         <div className="mb-4 flex flex-wrap gap-2">
           {gyms.map((gym) => (
-            <ChipToggle key={gym.id} active={gym.id === selectedGym?.id} onClick={() => setSelectedGymId(gym.id)}>
+            <ChipToggle
+              key={gym.id}
+              active={gym.id === selectedGym?.id}
+              onClick={() => {
+                setSelectedGymId(gym.id);
+                setSourceSelection("");
+              }}
+            >
               {gym.name}
             </ChipToggle>
           ))}
@@ -561,6 +659,22 @@ export function ClassesClient({
                 ))}
               </Select>
             </FieldRow>
+            <FieldRow label="Library source" className="min-w-56">
+              <Select value={sourceSelection} onChange={(event) => setSourceSelection(event.target.value)}>
+                <option value="">Choose a saved or global workout</option>
+                {(libraryWorkoutsByGym[selectedGym.id] ?? [])
+                  .filter(({ sourceKind }) => sourceKind === "gym")
+                  .map(({ workout }) => (
+                  <option key={workout.id} value={workout.id}>Gym · {workout.name}</option>
+                  ))}
+                {globalBenchmarks.map((workout) => (
+                  <option key={workout.id} value={workout.id}>Global · {workout.name}</option>
+                ))}
+              </Select>
+            </FieldRow>
+            <Button disabled={pending || !sourceSelection} onClick={() => beginFromSource(effectiveProgrammingDate)}>
+              Use source
+            </Button>
             <Button variant="primary" disabled={pending} onClick={() => generateGymDay(effectiveProgrammingDate)}>
               Generate from floor
             </Button>
@@ -575,7 +689,13 @@ export function ClassesClient({
         <Card className="mb-4 flex flex-col gap-4 p-5">
           <div>
             <h2 className="text-lg font-bold">
-              {programmingDraft.sessionId ? "Edit this Class Session" : `Write ${programmingDraft.localDate} by hand`}
+              {programmingDraft.sessionId
+                ? "Edit this Class Session"
+                : programmingDraft.libraryWorkoutId
+                  ? "Edit Gym Library Workout"
+                  : programmingDraft.localDate
+                    ? `Write ${programmingDraft.localDate} by hand`
+                    : "Create Gym Library Workout"}
             </h2>
             <p className="text-xs text-subtle">
               Weighted movements use <code>rxLoad</code> with male and female values.
@@ -705,13 +825,53 @@ export function ClassesClient({
             />
           </FieldRow>
           <div className="flex gap-2">
-            <Button variant="primary" disabled={pending} onClick={saveProgrammedWorkout}>
-              {programmingDraft.sessionId ? "Save this Session" : "Publish gym-day"}
-            </Button>
+            {!programmingDraft.libraryWorkoutId && programmingDraft.localDate ? (
+              <Button variant="primary" disabled={pending} onClick={saveProgrammedWorkout}>
+                {programmingDraft.sessionId ? "Save this Session" : "Publish gym-day"}
+              </Button>
+            ) : null}
+            {!programmingDraft.sessionId ? (
+              <Button disabled={pending} onClick={saveDraftToLibrary}>
+                {programmingDraft.libraryWorkoutId ? "Update Gym Library" : "Save to Gym Library"}
+              </Button>
+            ) : null}
             <Button disabled={pending} onClick={() => setProgrammingDraft(null)}>
               Cancel
             </Button>
           </div>
+        </Card>
+      ) : null}
+
+      {canProgram && selectedGym ? (
+        <Card className="mb-4 flex flex-col gap-3 p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-bold">Workout sources</h2>
+              <p className="text-xs text-subtle">Gym-owned templates remain separate from shared global benchmarks.</p>
+            </div>
+            <Button size="sm" disabled={pending} onClick={beginLibraryCreate}>Create Gym Workout</Button>
+          </div>
+          {(libraryWorkoutsByGym[selectedGym.id] ?? []).map(({ sourceKind, workout, lastRunAt, programmedRunCount, results }) => (
+            <div key={workout.id} className="rounded-xl border border-border p-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-semibold">
+                  {workout.name} <span className="text-xs font-normal text-subtle">· {sourceKind === "gym" ? "Gym Library" : "Global benchmark"}</span>
+                </p>
+                {sourceKind === "gym" ? (
+                  <Button size="sm" disabled={pending} onClick={() => beginLibraryEdit(workout)}>Edit</Button>
+                ) : null}
+              </div>
+              <p className="text-xs text-subtle">
+                {lastRunAt ? `Last run ${new Date(lastRunAt).toLocaleDateString()}` : "Never programmed"}
+                {` · ${programmedRunCount} programmed run${programmedRunCount === 1 ? "" : "s"}`}
+              </p>
+              {results.length > 0 ? (
+                <p className="mt-1 text-xs text-subtle">
+                  Result trend: {[...results].reverse().map((result) => formatScore(result)).join(" → ")}
+                </p>
+              ) : null}
+            </div>
+          ))}
         </Card>
       ) : null}
 

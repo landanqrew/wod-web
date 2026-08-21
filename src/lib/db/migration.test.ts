@@ -6,6 +6,7 @@ import { rowToImpediment } from "./mappers";
 import { EQUIPMENT_PRESETS } from "../domain/models/equipment";
 import { getMovementOrThrow } from "../domain/movements/library";
 import { checkMovement } from "../domain/scaling/constraint-engine";
+import { BENCHMARK_LIBRARY } from "../domain/generator/benchmark-library";
 
 const client = new Client({ connectionString: process.env.DATABASE_URL });
 
@@ -229,6 +230,141 @@ describe("Class Session snapshot migration", () => {
         {
           coach_athlete_id: "historical-coach",
           time_zone: "America/Chicago",
+        },
+      ]);
+    } finally {
+      await client.query("ROLLBACK");
+    }
+  });
+});
+
+describe("Gym Library migration", () => {
+  it("preserves legacy Workouts while adding nullable Gym ownership", async () => {
+    await client.query("BEGIN");
+    try {
+      await client.query(`
+        CREATE SCHEMA issue_23_migration;
+        SET LOCAL search_path TO issue_23_migration;
+        CREATE TABLE gyms (id text PRIMARY KEY);
+        CREATE TABLE workouts (
+          id text PRIMARY KEY,
+          name text NOT NULL,
+          movements jsonb NOT NULL DEFAULT '[]'
+        );
+        INSERT INTO gyms (id) VALUES ('gym-1');
+        INSERT INTO workouts (id, name, movements) VALUES ('legacy-workout', 'Legacy', '[]');
+      `);
+      const weightedBenchmarks = BENCHMARK_LIBRARY.filter((workout) =>
+        workout.movements.some((movement) => movement.rxLoad !== undefined),
+      );
+      for (const workout of weightedBenchmarks) {
+        const legacyMovements = workout.movements.map(
+          ({ movement: _movement, rxLoad: _rxLoad, ...movement }) => movement,
+        );
+        await client.query(
+          `INSERT INTO workouts (id, name, movements) VALUES ($1, $2, $3)`,
+          [workout.id, workout.name, JSON.stringify(legacyMovements)],
+        );
+      }
+      const migration = (
+        await readFile(
+          new URL("../../../drizzle/0012_even_cable.sql", import.meta.url),
+          "utf8",
+        )
+      ).replaceAll('"public".', '"issue_23_migration".');
+      for (const statement of migration.split("--> statement-breakpoint")) {
+        if (statement.trim()) await client.query(statement);
+      }
+      const migrated = await client.query<{
+        id: string;
+        gym_id: string | null;
+        has_updated_at: boolean;
+        movements: Array<{ movementId: string; load?: number; rxLoad?: unknown }>;
+      }>(
+        `SELECT id, gym_id, updated_at IS NOT NULL AS has_updated_at, movements FROM workouts ORDER BY id`,
+      );
+      expect(migrated.rows).toHaveLength(weightedBenchmarks.length + 1);
+      expect(migrated.rows.find(({ id }) => id === "legacy-workout")).toEqual({
+        id: "legacy-workout",
+        gym_id: null,
+        has_updated_at: true,
+        movements: [],
+      });
+      for (const workout of weightedBenchmarks) {
+        const row = migrated.rows.find(({ id }) => id === workout.id);
+        expect(row).toMatchObject({ gym_id: null, has_updated_at: true });
+        for (const [index, movement] of workout.movements.entries()) {
+          expect(row?.movements[index]).toMatchObject({
+            movementId: movement.movementId,
+            ...(movement.load === undefined ? {} : { load: movement.load }),
+            ...(movement.rxLoad === undefined ? {} : { rxLoad: movement.rxLoad }),
+          });
+        }
+      }
+      await client.query(
+        `UPDATE workouts SET gym_id = 'gym-1' WHERE id = 'legacy-workout'`,
+      );
+      await client.query(`DELETE FROM gyms WHERE id = 'gym-1'`);
+      expect(
+        (await client.query(`SELECT id FROM workouts WHERE id = 'legacy-workout'`)).rows,
+      ).toEqual([]);
+    } finally {
+      await client.query("ROLLBACK");
+    }
+  });
+});
+
+describe("Class result lineage migration", () => {
+  it("adds durable nullable lineage without losing legacy Results", async () => {
+    await client.query("BEGIN");
+    try {
+      await client.query(`
+        CREATE SCHEMA issue_23_result_migration;
+        SET LOCAL search_path TO issue_23_result_migration;
+        CREATE TABLE assigned_workouts (id text PRIMARY KEY);
+        CREATE TABLE workouts (id text PRIMARY KEY);
+        CREATE TABLE class_sessions (id text PRIMARY KEY);
+        CREATE TABLE workout_results (id text PRIMARY KEY);
+        INSERT INTO assigned_workouts VALUES ('assigned-1');
+        INSERT INTO workouts VALUES ('source-1');
+        INSERT INTO class_sessions VALUES ('session-1');
+        INSERT INTO workout_results VALUES ('result-1');
+      `);
+      for (const migrationName of [
+        "0013_spicy_scourge.sql",
+        "0014_nice_lady_deathstrike.sql",
+        "0015_high_next_avengers.sql",
+      ]) {
+        const migration = (
+          await readFile(
+            new URL(`../../../drizzle/${migrationName}`, import.meta.url),
+            "utf8",
+          )
+        ).replaceAll('"public".', '"issue_23_result_migration".');
+        for (const statement of migration.split("--> statement-breakpoint")) {
+          if (statement.trim()) await client.query(statement);
+        }
+      }
+      await client.query(`
+        UPDATE workout_results
+        SET assigned_workout_id = 'assigned-1',
+            source_workout_id = 'source-1',
+            class_session_id = 'session-1'
+      `);
+      await client.query(`DELETE FROM assigned_workouts WHERE id = 'assigned-1'`);
+      await client.query(`DELETE FROM workouts WHERE id = 'source-1'`);
+      await client.query(`DELETE FROM class_sessions WHERE id = 'session-1'`);
+      expect(
+        (await client.query(`
+          SELECT id, assigned_workout_id, source_workout_id, class_session_id
+          FROM workout_results
+        `)).rows,
+      ).toEqual([
+        {
+          id: "result-1",
+          assigned_workout_id: null,
+          source_workout_id: "source-1",
+          class_session_id: "session-1",
         },
       ]);
     } finally {

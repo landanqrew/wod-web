@@ -51,9 +51,19 @@ function benchmark(
 
 function rx(
   movementId: string,
-  opts: Omit<MovementPrescription, "movementId" | "movement"> = {}
+  opts: Omit<MovementPrescription, "movementId" | "movement"> & {
+    femaleLoad?: number;
+  } = {}
 ): MovementPrescription {
-  return { movementId, movement: getMovement(movementId), ...opts };
+  const { femaleLoad, ...prescription } = opts;
+  return {
+    movementId,
+    movement: getMovement(movementId),
+    ...prescription,
+    ...(prescription.load !== undefined && femaleLoad !== undefined
+      ? { rxLoad: { male: prescription.load, female: femaleLoad } }
+      : {}),
+  };
 }
 
 // ─── THE GIRLS ────────────────────────────────────────────────────────────
@@ -67,7 +77,7 @@ export const BENCHMARK_LIBRARY: BenchmarkWorkout[] = [
     WorkoutFormat.ForTime,
     ScoreType.Time,
     [
-      rx("thruster", { reps: 21, load: 95, notes: "21-15-9" }),
+      rx("thruster", { reps: 21, load: 95, femaleLoad: 65, notes: "21-15-9" }),
       rx("pull_up", { reps: 21, notes: "21-15-9" }),
     ],
     {
@@ -83,7 +93,7 @@ export const BENCHMARK_LIBRARY: BenchmarkWorkout[] = [
     "girl",
     WorkoutFormat.ForTime,
     ScoreType.Time,
-    [rx("clean_and_jerk", { reps: 30, load: 135 })],
+    [rx("clean_and_jerk", { reps: 30, load: 135, femaleLoad: 95 })],
     {
       description: "30 Clean & Jerks for time (135/95 lbs)",
       estimatedDuration: 8,
@@ -99,7 +109,7 @@ export const BENCHMARK_LIBRARY: BenchmarkWorkout[] = [
     ScoreType.Time,
     [
       rx("run", { distance: 400 }),
-      rx("kettlebell_swing", { reps: 21, load: 53 }),
+      rx("kettlebell_swing", { reps: 21, load: 53, femaleLoad: 35 }),
       rx("pull_up", { reps: 12 }),
     ],
     {
@@ -117,7 +127,7 @@ export const BENCHMARK_LIBRARY: BenchmarkWorkout[] = [
     WorkoutFormat.ForTime,
     ScoreType.Time,
     [
-      rx("deadlift", { reps: 21, load: 225, notes: "21-15-9" }),
+      rx("deadlift", { reps: 21, load: 225, femaleLoad: 155, notes: "21-15-9" }),
       rx("handstand_push_up", { reps: 21, notes: "21-15-9" }),
     ],
     {
@@ -134,7 +144,7 @@ export const BENCHMARK_LIBRARY: BenchmarkWorkout[] = [
     WorkoutFormat.ForTime,
     ScoreType.Time,
     [
-      rx("clean", { reps: 21, load: 135, notes: "21-15-9" }),
+      rx("clean", { reps: 21, load: 135, femaleLoad: 95, notes: "21-15-9" }),
       rx("ring_dip", { reps: 21, notes: "21-15-9" }),
     ],
     {
@@ -150,7 +160,7 @@ export const BENCHMARK_LIBRARY: BenchmarkWorkout[] = [
     "girl",
     WorkoutFormat.ForTime,
     ScoreType.Time,
-    [rx("snatch", { reps: 30, load: 135 })],
+    [rx("snatch", { reps: 30, load: 135, femaleLoad: 95 })],
     {
       description: "30 Snatches for time (135/95 lbs)",
       estimatedDuration: 8,
@@ -166,7 +176,7 @@ export const BENCHMARK_LIBRARY: BenchmarkWorkout[] = [
     ScoreType.Time,
     [
       rx("row", { calories: 0, distance: 1000 }),
-      rx("thruster", { reps: 50, load: 45 }),
+      rx("thruster", { reps: 50, load: 45, femaleLoad: 35 }),
       rx("pull_up", { reps: 30 }),
     ],
     {
@@ -182,7 +192,7 @@ export const BENCHMARK_LIBRARY: BenchmarkWorkout[] = [
     "girl",
     WorkoutFormat.ForTime,
     ScoreType.Time,
-    [rx("wall_ball_shot", { reps: 150, load: 20 })],
+    [rx("wall_ball_shot", { reps: 150, load: 20, femaleLoad: 14 })],
     {
       description: "150 Wall Ball Shots for time (20/14 lbs)",
       estimatedDuration: 12,
@@ -198,7 +208,7 @@ export const BENCHMARK_LIBRARY: BenchmarkWorkout[] = [
     ScoreType.Time,
     [
       rx("run", { distance: 400 }),
-      rx("overhead_squat", { reps: 15, load: 95 }),
+      rx("overhead_squat", { reps: 15, load: 95, femaleLoad: 65 }),
     ],
     {
       rounds: 5,
@@ -274,9 +284,9 @@ export const BENCHMARK_LIBRARY: BenchmarkWorkout[] = [
     WorkoutFormat.RoundsForTime,
     ScoreType.Time,
     [
-      rx("deadlift", { reps: 12, load: 155 }),
-      rx("hang_power_clean", { reps: 9, load: 155 }),
-      rx("push_jerk", { reps: 6, load: 155 }),
+      rx("deadlift", { reps: 12, load: 155, femaleLoad: 105 }),
+      rx("hang_power_clean", { reps: 9, load: 155, femaleLoad: 105 }),
+      rx("push_jerk", { reps: 6, load: 155, femaleLoad: 105 }),
     ],
     {
       rounds: 5,
@@ -296,12 +306,12 @@ export const BENCHMARK_LIBRARY: BenchmarkWorkout[] = [
     [
       rx("box_jump", { reps: 50, notes: '24" box' }),
       rx("pull_up", { reps: 50, notes: "jumping" }),
-      rx("kettlebell_swing", { reps: 50, load: 35 }),
+      rx("kettlebell_swing", { reps: 50, load: 35, femaleLoad: 26 }),
       rx("walking_lunge", { reps: 50 }),
       rx("knees_to_elbow", { reps: 50 }),
-      rx("push_press", { reps: 50, load: 45 }),
+      rx("push_press", { reps: 50, load: 45, femaleLoad: 35 }),
       rx("back_extension", { reps: 50 }),
-      rx("wall_ball_shot", { reps: 50, load: 20 }),
+      rx("wall_ball_shot", { reps: 50, load: 20, femaleLoad: 14 }),
       rx("burpee", { reps: 50 }),
       rx("double_under", { reps: 50 }),
     ],
@@ -320,7 +330,7 @@ export const BENCHMARK_LIBRARY: BenchmarkWorkout[] = [
     WorkoutFormat.RoundsForTime,
     ScoreType.Time,
     [
-      rx("clean", { reps: 30, load: 95 }),
+      rx("clean", { reps: 30, load: 95, femaleLoad: 65 }),
       rx("pull_up", { reps: 30 }),
       rx("run", { distance: 800 }),
     ],
@@ -341,10 +351,10 @@ export const BENCHMARK_LIBRARY: BenchmarkWorkout[] = [
     WorkoutFormat.Interval,
     ScoreType.Reps,
     [
-      rx("wall_ball_shot", { reps: 0, load: 20, duration: 60 }),
-      rx("sumo_deadlift_high_pull", { reps: 0, load: 75, duration: 60 }),
+      rx("wall_ball_shot", { reps: 0, load: 20, femaleLoad: 14, duration: 60 }),
+      rx("sumo_deadlift_high_pull", { reps: 0, load: 75, femaleLoad: 55, duration: 60 }),
       rx("box_jump", { reps: 0, duration: 60, notes: '20" box' }),
-      rx("push_press", { reps: 0, load: 75, duration: 60 }),
+      rx("push_press", { reps: 0, load: 75, femaleLoad: 55, duration: 60 }),
       rx("row", { calories: 0, duration: 60 }),
     ],
     {
@@ -365,7 +375,7 @@ export const BENCHMARK_LIBRARY: BenchmarkWorkout[] = [
     WorkoutFormat.ForTime,
     ScoreType.Time,
     [
-      rx("thruster", { reps: 100, load: 135 }),
+      rx("thruster", { reps: 100, load: 135, femaleLoad: 95 }),
       rx("burpee", { reps: 5, notes: "5 burpees at the top of every minute" }),
     ],
     {

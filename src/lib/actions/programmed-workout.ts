@@ -7,6 +7,7 @@ import { generateOptionsSchema } from "../validation";
 import {
   generateProgrammedWorkoutForGymDay,
   programGymDay,
+  programGymDayFromSource,
   updateProgrammedWorkoutForSession,
 } from "../training/programmed-workout";
 
@@ -17,6 +18,24 @@ export async function programGymDayAction(
 ) {
   const athlete = await requireAthlete();
   const result = await programGymDay(gymId, athlete.id, localDate, workout);
+  revalidatePath("/classes");
+  return result;
+}
+
+export async function programGymDayFromSourceAction(
+  gymId: string,
+  localDate: string,
+  sourceWorkoutId: string,
+  workout?: unknown,
+) {
+  const athlete = await requireAthlete();
+  const result = await programGymDayFromSource(
+    gymId,
+    athlete.id,
+    localDate,
+    sourceWorkoutId,
+    workout,
+  );
   revalidatePath("/classes");
   return result;
 }

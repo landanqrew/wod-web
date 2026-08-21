@@ -3,11 +3,14 @@ import { getClassesForGym, getUpcomingClassSessionsForAthlete } from "@/lib/data
 import { getGymMembers, getGymsForAthlete } from "@/lib/data/gym";
 import { getProgrammedWorkoutForSession } from "@/lib/data/programmed-workout";
 import { getAssignedWorkoutForAthlete } from "@/lib/data/assigned-workout";
+import { getGymLibrary } from "@/lib/data/gym-library";
+import { getBenchmarkWorkouts } from "@/lib/data/training";
 import { MembershipRole } from "@/lib/domain/models/gym";
 import { getAllMovements } from "@/lib/domain/movements/library";
 import { checkMovement, mergeConstraints } from "@/lib/domain/scaling/constraint-engine";
 import { ensureUpcomingClassSessions } from "@/lib/training/gym-class";
 import { ensureAssignedWorkoutsForAthlete } from "@/lib/training/assigned-workout";
+import { toProgrammedSourceWorkout } from "@/lib/training/programmed-workout";
 import { ClassesClient } from "./classes-client";
 
 export default async function ClassesPage() {
@@ -16,7 +19,10 @@ export default async function ClassesPage() {
   await ensureAssignedWorkoutsForAthlete(athlete.id);
   const gyms = await getGymsForAthlete(athlete.id);
   const ownerGyms = gyms.filter(({ membershipRole }) => membershipRole === MembershipRole.Owner);
-  const [upcomingSessions, ownerData] = await Promise.all([
+  const programmingGyms = gyms.filter(
+    ({ membershipRole }) => membershipRole === MembershipRole.Owner || membershipRole === MembershipRole.Coach,
+  );
+  const [upcomingSessions, ownerData, libraryData, globalBenchmarks] = await Promise.all([
     getUpcomingClassSessionsForAthlete(athlete.id, new Date()),
     Promise.all(
       ownerGyms.map(async (gym) => ({
@@ -27,6 +33,10 @@ export default async function ClassesPage() {
         ),
       })),
     ),
+    Promise.all(
+      programmingGyms.map(async (gym) => [gym.id, await getGymLibrary(gym.id, athlete.id)] as const),
+    ),
+    getBenchmarkWorkouts(),
   ]);
   const programmedWorkouts = await Promise.all(
     upcomingSessions
@@ -83,6 +93,8 @@ export default async function ClassesPage() {
       classesByGym={Object.fromEntries(ownerData.map(({ gymId, classes }) => [gymId, classes]))}
       coachesByGym={Object.fromEntries(ownerData.map(({ gymId, coaches }) => [gymId, coaches]))}
       movementOptionsBySession={movementOptionsBySession}
+      libraryWorkoutsByGym={Object.fromEntries(libraryData)}
+      globalBenchmarks={globalBenchmarks.map(toProgrammedSourceWorkout)}
     />
   );
 }

@@ -100,7 +100,8 @@ export function rowToWorkout(row: WorkoutRow): Workout {
 export function workoutToRow(
   workout: Workout,
   createdBy: string | null,
-  benchmarkCategory?: string
+  benchmarkCategory?: string,
+  gymId?: string | null,
 ): typeof workouts.$inferInsert {
   return {
     id: workout.id,
@@ -118,6 +119,7 @@ export function workoutToRow(
     benchmarkCategory: benchmarkCategory ?? null,
     estimatedDuration: workout.estimatedDuration ?? null,
     createdBy,
+    gymId: gymId ?? null,
   };
 }
 
@@ -126,6 +128,9 @@ export function rowToResult(row: ResultRow): WorkoutResult {
     id: row.id,
     athleteId: row.athleteId,
     workoutId: row.workoutId,
+    assignedWorkoutId: opt(row.assignedWorkoutId),
+    sourceWorkoutId: opt(row.sourceWorkoutId),
+    classSessionId: opt(row.classSessionId),
     performedAt: row.performedAt.toISOString(),
     scoreType: row.scoreType as ScoreType,
     timeSeconds: opt(row.timeSeconds),
@@ -148,6 +153,9 @@ export function resultToRow(result: WorkoutResult): typeof workoutResults.$infer
     id: result.id,
     athleteId: result.athleteId,
     workoutId: result.workoutId,
+    assignedWorkoutId: result.assignedWorkoutId ?? null,
+    sourceWorkoutId: result.sourceWorkoutId ?? null,
+    classSessionId: result.classSessionId ?? null,
     performedAt: new Date(result.performedAt),
     scoreType: result.scoreType,
     timeSeconds: result.timeSeconds ?? null,

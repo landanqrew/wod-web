@@ -24,7 +24,10 @@ import {
 import { createMovementPrescription } from "../domain/prescription";
 import { checkMovement, mergeConstraints } from "../domain/scaling/constraint-engine";
 import { assignedWorkoutOverrideSchema } from "../validation";
-import { resolveProgrammedMovements } from "./assigned-workout";
+import {
+  resolveProgrammedMovements,
+  syncAssignedWorkoutLedger,
+} from "./assigned-workout";
 import { loadAdjustmentOffer } from "./load-adjustment";
 
 type OverrideInput = z.infer<typeof assignedWorkoutOverrideSchema>;
@@ -251,15 +254,19 @@ export async function overrideAssignedWorkoutForAthlete(
       targetMovementId,
       explanations,
     );
+    const snapshot = {
+      workout: { ...assigned.workout, movements },
+      provenance: nextProvenance,
+      changes,
+    };
     await tx
       .update(assignedWorkouts)
       .set({
-        workout: { ...assigned.workout, movements },
-        provenance: nextProvenance,
-        changes,
+        ...snapshot,
         updatedAt: new Date(),
       })
       .where(eq(assignedWorkouts.id, assigned.id));
+    await syncAssignedWorkoutLedger(tx, athleteId, snapshot);
     return input.load === undefined ||
       current.load === undefined ||
       input.load >= current.load

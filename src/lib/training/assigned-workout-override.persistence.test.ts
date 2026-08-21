@@ -2,7 +2,7 @@ import "dotenv/config";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db, pool } from "../db";
-import { athletes, gyms, impediments, users } from "../db/schema";
+import { athletes, gyms, impediments, users, workouts } from "../db/schema";
 import { getAssignedWorkoutForAthlete } from "../data/assigned-workout";
 import { getClassSessionsForGym } from "../data/gym-class";
 import { Joint } from "../domain/models/body";
@@ -126,6 +126,15 @@ describe("Assigned Workout overrides and reconciliation", () => {
     ]);
     expect(assigned?.changes.flatMap(({ explanations }) => explanations).join(" "))
       .toContain("heavier than programmed");
+    const [ledgerWorkout] = await db
+      .select({ movements: workouts.movements })
+      .from(workouts)
+      .where(eq(workouts.id, assigned!.id))
+      .limit(1);
+    expect(ledgerWorkout.movements).toMatchObject([
+      { movementId: "back_squat", reps: 7, load: 250 },
+      { movementId: "plank", duration: 45 },
+    ]);
 
     await expect(
       overrideAssignedWorkoutForAthlete(session.id, outsiderAthleteId, {
