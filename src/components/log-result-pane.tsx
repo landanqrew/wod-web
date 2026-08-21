@@ -7,7 +7,7 @@ import { Trophy } from "lucide-react";
 import { SidePane } from "@/components/ui/side-pane";
 import { Button } from "@/components/ui/button";
 import { FieldRow, Input, Label, Select, Textarea, Toggle } from "@/components/ui/field";
-import { logAssignedWorkoutResultAction, logResultAction } from "@/lib/actions/training";
+import { logResultAction } from "@/lib/actions/training";
 import { ScoreType } from "@/lib/domain/models/workout";
 import type { Workout } from "@/lib/domain/models/workout";
 import { DifficultyTier } from "@/lib/domain/models/movement";
@@ -22,10 +22,9 @@ type Props = {
   /** Pass true when the workout isn't persisted yet (freshly generated). */
   persistWorkout?: boolean;
   scalingTier?: DifficultyTier;
-  classSessionId?: string;
 };
 
-export function LogResultPane({ open, onClose, workout, persistWorkout, scalingTier, classSessionId }: Props) {
+export function LogResultPane({ open, onClose, workout, persistWorkout, scalingTier }: Props) {
   const router = useRouter();
   const [pending, setPending] = React.useState(false);
   const [rx, setRx] = React.useState(true);
@@ -37,12 +36,13 @@ export function LogResultPane({ open, onClose, workout, persistWorkout, scalingT
     Object.fromEntries(workout.movements.map((m) => [m.movementId, m.load ? String(m.load) : ""]))
   );
 
-  const setScoreField = (key: string, value: string) => setScore((prev) => ({ ...prev, [key]: value }));
+  const setScoreField = (key: string, value: string) =>
+    setScore((prev) => ({ ...prev, [key]: value }));
 
   async function save() {
     setPending(true);
     try {
-      const input = {
+      const { prs } = await logResultAction({
         workout: persistWorkout ? stripWorkout(workout) : undefined,
         workoutId: workout.id,
         performedAt: new Date().toISOString(),
@@ -58,15 +58,14 @@ export function LogResultPane({ open, onClose, workout, persistWorkout, scalingT
           rx,
         })),
         notes: notes || undefined,
-      };
-      const { prs } = classSessionId
-        ? await logAssignedWorkoutResultAction(classSessionId, input)
-        : await logResultAction(input);
+      });
 
       if (prs.length > 0) {
         for (const pr of prs) {
           const label =
-            pr.referenceType === "movement" ? (getMovement(pr.referenceId)?.name ?? pr.referenceId) : workout.name;
+            pr.referenceType === "movement"
+              ? (getMovement(pr.referenceId)?.name ?? pr.referenceId)
+              : workout.name;
           toast.custom(() => (
             <div className="animate-pr-pop flex items-center gap-3 rounded-2xl border border-primary/50 bg-primary px-4 py-3 text-on-primary shadow-glow">
               <Trophy size={20} strokeWidth={2.4} />
@@ -165,17 +164,16 @@ export function LogResultPane({ open, onClose, workout, persistWorkout, scalingT
                 const movement = m.movement ?? getMovement(m.movementId);
                 return (
                   <div key={m.movementId} className="flex items-center gap-3">
-                    <span className="min-w-0 flex-1 truncate text-[13px]">{movement?.name ?? m.movementId}</span>
+                    <span className="min-w-0 flex-1 truncate text-[13px]">
+                      {movement?.name ?? m.movementId}
+                    </span>
                     <Input
                       type="number"
                       inputMode="numeric"
                       placeholder="lb"
                       value={loads[m.movementId] ?? ""}
                       onChange={(e) =>
-                        setLoads((prev) => ({
-                          ...prev,
-                          [m.movementId]: e.target.value,
-                        }))
+                        setLoads((prev) => ({ ...prev, [m.movementId]: e.target.value }))
                       }
                       className="w-24 py-1.5 text-right font-mono text-[13px]"
                     />
@@ -319,10 +317,7 @@ function scoreFields(scoreType: ScoreType, score: Record<string, string>) {
     case ScoreType.Time:
       return { timeSeconds: score.time ? parseClock(score.time) : undefined };
     case ScoreType.RoundsAndReps:
-      return {
-        roundsCompleted: num(score.rounds),
-        partialReps: num(score.reps),
-      };
+      return { roundsCompleted: num(score.rounds), partialReps: num(score.reps) };
     case ScoreType.Load:
       return { peakLoad: num(score.load) };
     case ScoreType.Reps:

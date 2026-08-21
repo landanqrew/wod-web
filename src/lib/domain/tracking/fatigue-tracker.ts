@@ -1,7 +1,4 @@
 import type { WorkoutResult } from "../models/workout-result";
-import type { Workout } from "../models/workout";
-import type { Muscle } from "../models/body";
-import { getMovement } from "../movements/library";
 import { filterByDateRange } from "./history";
 
 /**
@@ -40,69 +37,6 @@ export interface FatigueReport {
   loadTrend: "increasing" | "steady" | "decreasing" | "insufficient_data";
 }
 
-export interface MuscleLoadAdvice {
-  muscle: Muscle;
-  trainedDays: number;
-  windowDays: number;
-}
-
-/** Advisory overlap between an upcoming prescription and recent performed work. */
-export function muscleLoadAdvice(
-  workout: Workout,
-  results: WorkoutResult[],
-  referenceLocalDate: string,
-  windowDays = 4,
-  timeZone = "UTC"
-): MuscleLoadAdvice[] {
-  const reference = new Date(`${referenceLocalDate}T00:00:00Z`);
-  const recentDays = new Set(
-    Array.from({ length: windowDays }, (_, index) => {
-      const day = new Date(reference);
-      day.setUTCDate(day.getUTCDate() - index - 1);
-      return day.toISOString().slice(0, 10);
-    })
-  );
-  const targetMuscles = new Set(
-    workout.movements.flatMap(({ movementId }) => {
-      const movement = getMovement(movementId);
-      return movement ? [...movement.primaryMuscles, ...movement.secondaryMuscles] : [];
-    })
-  );
-  const daysByMuscle = new Map<Muscle, Set<string>>();
-
-  for (const result of results) {
-    const localDay = localDateInTimeZone(new Date(result.performedAt), timeZone);
-    if (!recentDays.has(localDay)) continue;
-    const resultMuscles = new Set(
-      result.movementResults.flatMap(({ movementId }) => {
-        const movement = getMovement(movementId);
-        return movement ? [...movement.primaryMuscles, ...movement.secondaryMuscles] : [];
-      })
-    );
-    for (const muscle of resultMuscles) {
-      if (!targetMuscles.has(muscle)) continue;
-      const days = daysByMuscle.get(muscle) ?? new Set<string>();
-      days.add(localDay);
-      daysByMuscle.set(muscle, days);
-    }
-  }
-
-  return [...daysByMuscle]
-    .map(([muscle, days]) => ({ muscle, trainedDays: days.size, windowDays }))
-    .sort((left, right) => right.trainedDays - left.trainedDays || left.muscle.localeCompare(right.muscle));
-}
-
-function localDateInTimeZone(date: Date, timeZone: string): string {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(date);
-  const value = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
-  return `${value.year}-${value.month}-${value.day}`;
-}
-
 /**
  * Tracks fatigue indicators and recovery status from training data.
  */
@@ -119,12 +53,18 @@ export class FatigueTracker {
     // Fetch last 30 days of data
     const monthStart = new Date(now);
     monthStart.setDate(monthStart.getDate() - 30);
-    const monthResults = filterByDateRange(this.results, monthStart.toISOString(), now.toISOString());
+    const monthResults = filterByDateRange(
+      this.results,
+      monthStart.toISOString(),
+      now.toISOString()
+    );
 
     // Fetch last 7 days
     const weekStart = new Date(now);
     weekStart.setDate(weekStart.getDate() - 7);
-    const weekResults = monthResults.filter((r) => new Date(r.performedAt) >= weekStart);
+    const weekResults = monthResults.filter(
+      (r) => new Date(r.performedAt) >= weekStart
+    );
 
     const insights: FatigueInsight[] = [];
 
@@ -138,8 +78,12 @@ export class FatigueTracker {
       .reverse(); // oldest first
 
     // Weekly and monthly RPE averages
-    const weekRpes = weekResults.filter((r) => r.rpe !== undefined).map((r) => r.rpe!);
-    const monthRpes = monthResults.filter((r) => r.rpe !== undefined).map((r) => r.rpe!);
+    const weekRpes = weekResults
+      .filter((r) => r.rpe !== undefined)
+      .map((r) => r.rpe!);
+    const monthRpes = monthResults
+      .filter((r) => r.rpe !== undefined)
+      .map((r) => r.rpe!);
 
     const weeklyRpeAvg = weekRpes.length > 0 ? avg(weekRpes) : null;
     const monthlyRpeAvg = monthRpes.length > 0 ? avg(monthRpes) : null;
@@ -172,7 +116,11 @@ export class FatigueTracker {
     };
   }
 
-  private analyzeRPETrends(weekAvg: number | null, monthAvg: number | null, trend: RPEDataPoint[]): FatigueInsight[] {
+  private analyzeRPETrends(
+    weekAvg: number | null,
+    monthAvg: number | null,
+    trend: RPEDataPoint[]
+  ): FatigueInsight[] {
     const insights: FatigueInsight[] = [];
 
     if (weekAvg !== null && monthAvg !== null) {
@@ -252,7 +200,10 @@ export class FatigueTracker {
     return insights;
   }
 
-  private analyzeWorkloadRatio(weekCount: number, monthCount: number): FatigueInsight[] {
+  private analyzeWorkloadRatio(
+    weekCount: number,
+    monthCount: number
+  ): FatigueInsight[] {
     const insights: FatigueInsight[] = [];
 
     // Acute:chronic workload ratio (ACWR concept, simplified)
@@ -296,7 +247,9 @@ export class FatigueTracker {
     if (results.length < 2) return insights;
 
     // Check for back-to-back high-intensity days
-    const sorted = [...results].sort((a, b) => new Date(a.performedAt).getTime() - new Date(b.performedAt).getTime());
+    const sorted = [...results].sort(
+      (a, b) => new Date(a.performedAt).getTime() - new Date(b.performedAt).getTime()
+    );
 
     let consecutiveHighDays = 0;
     let maxConsecutive = 0;
@@ -336,7 +289,9 @@ export class FatigueTracker {
     return insights;
   }
 
-  private detectLoadTrend(results: WorkoutResult[]): "increasing" | "steady" | "decreasing" | "insufficient_data" {
+  private detectLoadTrend(
+    results: WorkoutResult[]
+  ): "increasing" | "steady" | "decreasing" | "insufficient_data" {
     const rpeResults = results.filter((r) => r.rpe !== undefined);
     if (rpeResults.length < 6) return "insufficient_data";
 

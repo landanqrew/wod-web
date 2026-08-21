@@ -373,44 +373,6 @@ describe("Class result lineage migration", () => {
   });
 });
 
-describe("Assigned Workout result uniqueness migration", () => {
-  it("allows solo Results but enforces one Result per Assigned Workout", async () => {
-    await client.query("BEGIN");
-    try {
-      await client.query(`
-        CREATE SCHEMA issue_24_result_migration;
-        SET LOCAL search_path TO issue_24_result_migration;
-        CREATE TABLE workout_results (
-          id text PRIMARY KEY,
-          assigned_workout_id text
-        );
-        CREATE INDEX workout_results_assigned_idx
-          ON workout_results (assigned_workout_id);
-        INSERT INTO workout_results VALUES
-          ('solo-1', null),
-          ('solo-2', null),
-          ('assigned-1-result', 'assigned-1');
-      `);
-      const migration = (
-        await readFile(
-          new URL("../../../drizzle/0016_clear_magdalene.sql", import.meta.url),
-          "utf8",
-        )
-      ).replaceAll('"public".', '"issue_24_result_migration".');
-      for (const statement of migration.split("--> statement-breakpoint")) {
-        if (statement.trim()) await client.query(statement);
-      }
-      await expect(
-        client.query(
-          `INSERT INTO workout_results VALUES ('assigned-1-duplicate', 'assigned-1')`,
-        ),
-      ).rejects.toMatchObject({ code: "23505" });
-    } finally {
-      await client.query("ROLLBACK");
-    }
-  });
-});
-
 describe("Gym Recovery Window migration", () => {
   it("backfills the 48-hour default for an existing Gym", async () => {
     await client.query("BEGIN");

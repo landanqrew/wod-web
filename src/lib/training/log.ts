@@ -1,25 +1,20 @@
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import {
-  assignedWorkouts,
-  classSessions,
-  personalRecords,
-  programmedWorkouts,
-  reservations,
-  workoutResults,
-  workouts,
-} from "@/lib/db/schema";
-import { prToRow, resultToRow, rowToPR, workoutToRow } from "@/lib/db/mappers";
+import { personalRecords, workoutResults, workouts } from "@/lib/db/schema";
+import { prToRow, resultToRow, workoutToRow } from "@/lib/db/mappers";
 import { getPRs } from "@/lib/data/training";
 import { newId } from "@/lib/ids";
-import { assignedWorkoutResultSchema, logResultSchema } from "@/lib/validation";
+import { logResultSchema } from "@/lib/validation";
 import { PRTracker } from "@/lib/domain/tracking/pr-tracker";
 import type { Workout } from "@/lib/domain/models/workout";
 import type { PersonalRecord, WorkoutResult } from "@/lib/domain/models/workout-result";
 
 /** Persist a workout so results can reference it. Safe to call repeatedly. */
 export async function upsertWorkout(workout: Workout, athleteId: string | null): Promise<string> {
-  await db.insert(workouts).values(workoutToRow(workout, athleteId)).onConflictDoNothing({ target: workouts.id });
+  await db
+    .insert(workouts)
+    .values(workoutToRow(workout, athleteId))
+    .onConflictDoNothing({ target: workouts.id });
   return workout.id;
 }
 
@@ -68,72 +63,4 @@ export async function logResultForAthlete(
   if (prs.length > 0) await db.insert(personalRecords).values(prs.map(prToRow));
 
   return { result, prs };
-}
-
-/** Log exactly the Assigned Workout owned by this athlete's Class Reservation. */
-export async function logAssignedWorkoutResultForAthlete(classSessionId: string, athleteId: string, raw: unknown) {
-  const input = assignedWorkoutResultSchema.parse(raw);
-  return db.transaction(async (tx) => {
-    const [session] = await tx
-      .select({ id: classSessions.id, startsAt: classSessions.startsAt })
-      .from(classSessions)
-      .where(eq(classSessions.id, classSessionId))
-      .limit(1)
-      .for("update");
-    if (!session) throw new Error("Class Session not found");
-    const [context] = await tx
-      .select({
-        reservationId: reservations.id,
-        assignedWorkoutId: assignedWorkouts.id,
-        assignedWorkout: assignedWorkouts.workout,
-        sourceWorkoutId: programmedWorkouts.sourceWorkoutId,
-      })
-      .from(reservations)
-      .innerJoin(assignedWorkouts, eq(assignedWorkouts.reservationId, reservations.id))
-      .leftJoin(programmedWorkouts, eq(programmedWorkouts.classSessionId, reservations.classSessionId))
-      .where(and(eq(reservations.classSessionId, classSessionId), eq(reservations.athleteId, athleteId)))
-      .limit(1)
-      .for("update", { of: [reservations, assignedWorkouts] });
-    if (!context) throw new Error("Assigned Workout not found");
-    if (new Date(input.performedAt) < session.startsAt) {
-      throw new Error("A Class result cannot be logged before the Session starts");
-    }
-    if (input.scoreType !== context.assignedWorkout.scoreType) {
-      throw new Error("Result score type does not match the Assigned Workout");
-    }
-    const assignedMovementIds = new Set(context.assignedWorkout.movements.map(({ movementId }) => movementId));
-    if (input.movementResults.some(({ movementId }) => !assignedMovementIds.has(movementId))) {
-      throw new Error("Result contains a Movement outside the Assigned Workout");
-    }
-
-    const result: WorkoutResult = {
-      id: newId("res"),
-      athleteId,
-      workoutId: context.assignedWorkoutId,
-      assignedWorkoutId: context.assignedWorkoutId,
-      sourceWorkoutId: context.sourceWorkoutId ?? undefined,
-      classSessionId,
-      performedAt: new Date(input.performedAt).toISOString(),
-      scoreType: context.assignedWorkout.scoreType,
-      timeSeconds: input.timeSeconds,
-      roundsCompleted: input.roundsCompleted,
-      partialReps: input.partialReps,
-      peakLoad: input.peakLoad,
-      totalReps: input.totalReps,
-      totalCalories: input.totalCalories,
-      totalDistance: input.totalDistance,
-      rpe: input.rpe,
-      rx: input.rx,
-      scalingTier: input.scalingTier,
-      movementResults: input.movementResults,
-      notes: input.notes,
-    };
-    await tx.insert(workoutResults).values(resultToRow(result));
-    const existingPRs = (await tx.select().from(personalRecords).where(eq(personalRecords.athleteId, athleteId))).map(
-      rowToPR
-    );
-    const prs = new PRTracker(existingPRs).detectPRs(result);
-    if (prs.length > 0) await tx.insert(personalRecords).values(prs.map(prToRow));
-    return { result, prs };
-  });
 }

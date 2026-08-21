@@ -1,8 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { FatigueTracker, muscleLoadAdvice } from "./fatigue-tracker";
+import { FatigueTracker } from "./fatigue-tracker";
 import type { WorkoutResult } from "../models/workout-result";
-import { ScoreType, WorkoutFormat } from "../models/workout";
-import { Muscle } from "../models/body";
+import { ScoreType } from "../models/workout";
 
 function makeResult(overrides: Partial<WorkoutResult> = {}): WorkoutResult {
   return {
@@ -69,7 +68,9 @@ describe("FatigueTracker", () => {
     const report = tracker.analyze();
     expect(report.rpeTrend).toHaveLength(5);
     // Should be ordered oldest first
-    expect(report.rpeTrend[0].rpe).toBeLessThanOrEqual(report.rpeTrend[report.rpeTrend.length - 1].rpe);
+    expect(report.rpeTrend[0].rpe).toBeLessThanOrEqual(
+      report.rpeTrend[report.rpeTrend.length - 1].rpe
+    );
   });
 
   it("detects high RPE warning when all recent workouts are 9+", () => {
@@ -85,7 +86,9 @@ describe("FatigueTracker", () => {
     }
 
     const report = tracker.analyze();
-    const rpeInsights = report.insights.filter((i) => i.category === "rpe_trend" || i.category === "rpe_acute");
+    const rpeInsights = report.insights.filter(
+      (i) => i.category === "rpe_trend" || i.category === "rpe_acute"
+    );
     expect(rpeInsights.length).toBeGreaterThanOrEqual(1);
     expect(rpeInsights.some((i) => i.severity === "warning")).toBe(true);
   });
@@ -104,7 +107,9 @@ describe("FatigueTracker", () => {
     }
 
     const report = tracker.analyze();
-    const recoveryInsights = report.insights.filter((i) => i.category === "recovery");
+    const recoveryInsights = report.insights.filter(
+      (i) => i.category === "recovery"
+    );
     expect(recoveryInsights.length).toBeGreaterThanOrEqual(1);
   });
 
@@ -134,7 +139,9 @@ describe("FatigueTracker", () => {
     }
 
     const report = tracker.analyze();
-    const overreachInsights = report.insights.filter((i) => i.category === "overreaching");
+    const overreachInsights = report.insights.filter(
+      (i) => i.category === "overreaching"
+    );
     expect(overreachInsights.length).toBeGreaterThanOrEqual(1);
   });
 
@@ -144,7 +151,9 @@ describe("FatigueTracker", () => {
       results.push(
         makeResult({
           id: `r_${i}`,
-          performedAt: new Date(Date.now() - (7 - i) * 3 * 86400000).toISOString(),
+          performedAt: new Date(
+            Date.now() - (7 - i) * 3 * 86400000
+          ).toISOString(),
           rpe: i < 4 ? 5 + i * 0.25 : 8 + (i - 4) * 0.25,
           movementResults: [],
         })
@@ -160,7 +169,9 @@ describe("FatigueTracker", () => {
       results.push(
         makeResult({
           id: `r_${i}`,
-          performedAt: new Date(Date.now() - (7 - i) * 3 * 86400000).toISOString(),
+          performedAt: new Date(
+            Date.now() - (7 - i) * 3 * 86400000
+          ).toISOString(),
           rpe: i < 4 ? 9 - i * 0.25 : 5 - (i - 4) * 0.25,
           movementResults: [],
         })
@@ -169,63 +180,5 @@ describe("FatigueTracker", () => {
 
     const report = tracker.analyze();
     expect(report.loadTrend).toBe("decreasing");
-  });
-});
-
-describe("Assigned Workout muscle-load advice", () => {
-  it("counts distinct recent training days across the athlete ledger without changing the workout", () => {
-    const workout = {
-      id: "assigned_1",
-      name: "Squat day",
-      format: WorkoutFormat.Strength,
-      scoreType: ScoreType.Load,
-      isBenchmark: false,
-      movements: [{ movementId: "back_squat", reps: 5, load: 155 }],
-    };
-    const snapshot = structuredClone(workout);
-    const advice = muscleLoadAdvice(
-      workout,
-      [
-        makeResult({
-          performedAt: "2027-06-06T12:00:00Z",
-          movementResults: [{ movementId: "air_squat", reps: 50, rx: true }],
-        }),
-        makeResult({
-          performedAt: "2027-06-05T12:00:00Z",
-          movementResults: [{ movementId: "front_squat", reps: 15, load: 95, rx: true }],
-        }),
-        makeResult({
-          performedAt: "2027-06-05T18:00:00Z",
-          movementResults: [{ movementId: "run", reps: 1, rx: true }],
-        }),
-        makeResult({
-          performedAt: "2027-05-01T12:00:00Z",
-          movementResults: [{ movementId: "back_squat", reps: 5, load: 135, rx: true }],
-        }),
-      ],
-      "2027-06-07"
-    );
-
-    expect(advice).toContainEqual({
-      muscle: Muscle.Quads,
-      trainedDays: 2,
-      windowDays: 4,
-    });
-    expect(workout).toEqual(snapshot);
-
-    expect(
-      muscleLoadAdvice(
-        workout,
-        [
-          makeResult({
-            performedAt: "2027-06-07T04:30:00Z",
-            movementResults: [{ movementId: "air_squat", reps: 50, rx: true }],
-          }),
-        ],
-        "2027-06-07",
-        4,
-        "America/Chicago"
-      )
-    ).toContainEqual({ muscle: Muscle.Quads, trainedDays: 1, windowDays: 4 });
   });
 });

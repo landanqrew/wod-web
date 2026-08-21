@@ -26,5 +26,4 @@ export interface ClassSessionSummary {
   reservationCount: number;
   reserved: boolean;
   workoutPosted: boolean;
-  resultLogged: boolean;
 }

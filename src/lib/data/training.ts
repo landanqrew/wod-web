@@ -3,9 +3,6 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   personalRecords,
-  classSessions,
-  gymClasses,
-  gyms,
   trainingSessions,
   workoutResults,
   workouts,
@@ -19,10 +16,7 @@ import { getMovement } from "@/lib/domain/movements/library";
 export function hydrateWorkout(workout: Workout): Workout {
   return {
     ...workout,
-    movements: workout.movements.map((p) => ({
-      ...p,
-      movement: getMovement(p.movementId),
-    })),
+    movements: workout.movements.map((p) => ({ ...p, movement: getMovement(p.movementId) })),
   };
 }
 
@@ -35,29 +29,16 @@ export async function getResults(athleteId: string): Promise<WorkoutResult[]> {
   return rows.map(rowToResult);
 }
 
-export async function getResult(athleteId: string, resultId: string): Promise<WorkoutResult | null> {
+export async function getResult(
+  athleteId: string,
+  resultId: string
+): Promise<WorkoutResult | null> {
   const [row] = await db
     .select()
     .from(workoutResults)
     .where(and(eq(workoutResults.athleteId, athleteId), eq(workoutResults.id, resultId)))
     .limit(1);
   return row ? rowToResult(row) : null;
-}
-
-export async function getClassSessionResultContext(classSessionId: string) {
-  const [row] = await db
-    .select({
-      className: gymClasses.name,
-      gymName: gyms.name,
-      startsAt: classSessions.startsAt,
-      timeZone: classSessions.timeZone,
-    })
-    .from(classSessions)
-    .innerJoin(gymClasses, eq(gymClasses.id, classSessions.classId))
-    .innerJoin(gyms, eq(gyms.id, gymClasses.gymId))
-    .where(eq(classSessions.id, classSessionId))
-    .limit(1);
-  return row ?? null;
 }
 
 export async function getWorkout(workoutId: string): Promise<Workout | null> {
@@ -78,7 +59,11 @@ export async function getWorkoutsForResults(results: WorkoutResult[]): Promise<W
 }
 
 export async function getBenchmarkWorkouts(): Promise<Workout[]> {
-  const rows = await db.select().from(workouts).where(eq(workouts.isBenchmark, true)).orderBy(workouts.name);
+  const rows = await db
+    .select()
+    .from(workouts)
+    .where(eq(workouts.isBenchmark, true))
+    .orderBy(workouts.name);
   return rows.map((r) => hydrateWorkout(rowToWorkout(r)));
 }
 
@@ -100,7 +85,10 @@ export async function getSessions(athleteId: string): Promise<TrainingSession[]>
   return rows.map(rowToSession);
 }
 
-export async function getSession(athleteId: string, sessionId: string): Promise<TrainingSession | null> {
+export async function getSession(
+  athleteId: string,
+  sessionId: string
+): Promise<TrainingSession | null> {
   const [row] = await db
     .select()
     .from(trainingSessions)

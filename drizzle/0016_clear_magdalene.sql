@@ -1,2 +1,0 @@
-DROP INDEX "workout_results_assigned_idx";--> statement-breakpoint
-CREATE UNIQUE INDEX "workout_results_assigned_idx" ON "workout_results" USING btree ("assigned_workout_id") WHERE "workout_results"."assigned_workout_id" IS NOT NULL;
