@@ -54,4 +54,29 @@ describe("Station advisory", () => {
   it("does not infer a warning from an undeclared Station count", () => {
     expect(findStationWarnings(workout, {}, 25)).toEqual([]);
   });
+
+  it("deduplicates a repeated Movement without collapsing distinct Movements", () => {
+    expect(
+      findStationWarnings(
+        { ...workout, movements: [workout.movements[0], workout.movements[0]] },
+        { [Equipment.Rower]: 1 },
+        3,
+      ),
+    ).toHaveLength(1);
+
+    const sharedBarbell: Workout = {
+      ...workout,
+      movements: [
+        { movementId: "thruster", reps: 10 },
+        { movementId: "push_press", reps: 10 },
+      ],
+    };
+    expect(
+      findStationWarnings(
+        sharedBarbell,
+        { [Equipment.Barbell]: 1 },
+        3,
+      ).map(({ movementId }) => movementId),
+    ).toEqual(["thruster", "push_press"]);
+  });
 });

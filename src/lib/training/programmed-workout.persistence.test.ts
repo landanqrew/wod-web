@@ -11,7 +11,10 @@ import { getProgrammedWorkoutForSession } from "../data/programmed-workout";
 import { Equipment, EQUIPMENT_PRESETS } from "../domain/models/equipment";
 import { MembershipRole } from "../domain/models/gym";
 import { Muscle } from "../domain/models/body";
-import { getMovementOrThrow } from "../domain/movements/library";
+import {
+  getAllMovements,
+  getMovementOrThrow,
+} from "../domain/movements/library";
 import {
   ScoreType,
   WorkoutFormat,
@@ -531,6 +534,33 @@ describe("Programmed Workouts", () => {
     await expect(
       getProgrammedWorkoutForSession(stationSession.id, ownerAthleteId),
     ).resolves.toMatchObject({ workout: stationWorkout });
+
+    const generatedStationResult = await generateProgrammedWorkoutForGymDay(
+      gymId,
+      coachAthleteId,
+      "2027-03-22",
+      {
+        format: WorkoutFormat.AMRAP,
+        movementCount: 1,
+        excludeMovements: getAllMovements()
+          .filter(({ id }) => id !== "row")
+          .map(({ id }) => id),
+      },
+    );
+    expect(generatedStationResult.stationWarnings).toEqual([
+      expect.objectContaining({
+        classSessionId: stationSession.id,
+        movementId: "row",
+        reservedHeadcount: 3,
+        availableStations: 1,
+        shortfall: 2,
+      }),
+    ]);
+    await expect(
+      getProgrammedWorkoutForSession(stationSession.id, ownerAthleteId),
+    ).resolves.toMatchObject({
+      workout: { movements: [expect.objectContaining({ movementId: "row" })] },
+    });
 
     await updateGymForOwner(gymId, ownerAthleteId, {
       name: "Iron Ridge",

@@ -334,9 +334,19 @@ export function ClassesClient({
       const session = upcomingSessions.find(
         ({ id }) => id === warning.classSessionId,
       );
+      const sessionLabel = session
+        ? `${session.className} · ${new Intl.DateTimeFormat("en-US", {
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+            timeZone: session.timeZone,
+            timeZoneName: "short",
+          }).format(new Date(session.startsAt))}`
+        : undefined;
       toast.warning(
         `${warning.movementName}${
-          session ? ` · ${session.className}` : ""
+          sessionLabel ? ` · ${sessionLabel}` : ""
         }: short ${warning.shortfall} ${formatLabel(
           warning.equipment,
         )} Station${warning.shortfall === 1 ? "" : "s"} for ${
