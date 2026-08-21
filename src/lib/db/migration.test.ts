@@ -237,6 +237,44 @@ describe("Class Session snapshot migration", () => {
   });
 });
 
+describe("Gym Library migration", () => {
+  it("preserves legacy Workouts while adding nullable Gym ownership", async () => {
+    await client.query("BEGIN");
+    try {
+      await client.query(`
+        CREATE SCHEMA issue_23_migration;
+        SET LOCAL search_path TO issue_23_migration;
+        CREATE TABLE gyms (id text PRIMARY KEY);
+        CREATE TABLE workouts (id text PRIMARY KEY, name text NOT NULL);
+        INSERT INTO gyms (id) VALUES ('gym-1');
+        INSERT INTO workouts (id, name) VALUES ('legacy-workout', 'Legacy');
+      `);
+      const migration = (
+        await readFile(
+          new URL("../../../drizzle/0012_even_cable.sql", import.meta.url),
+          "utf8",
+        )
+      ).replaceAll('"public".', '"issue_23_migration".');
+      for (const statement of migration.split("--> statement-breakpoint")) {
+        if (statement.trim()) await client.query(statement);
+      }
+      const legacy = await client.query(
+        `SELECT id, gym_id, updated_at IS NOT NULL AS has_updated_at FROM workouts`,
+      );
+      expect(legacy.rows).toEqual([
+        { id: "legacy-workout", gym_id: null, has_updated_at: true },
+      ]);
+      await client.query(
+        `UPDATE workouts SET gym_id = 'gym-1' WHERE id = 'legacy-workout'`,
+      );
+      await client.query(`DELETE FROM gyms WHERE id = 'gym-1'`);
+      expect((await client.query(`SELECT id FROM workouts`)).rows).toEqual([]);
+    } finally {
+      await client.query("ROLLBACK");
+    }
+  });
+});
+
 describe("Gym Recovery Window migration", () => {
   it("backfills the 48-hour default for an existing Gym", async () => {
     await client.query("BEGIN");

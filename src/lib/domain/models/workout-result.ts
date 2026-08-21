@@ -9,6 +9,8 @@ export interface WorkoutResult {
   athleteId: string;
   /** Workout that was performed */
   workoutId: string;
+  /** Assigned Workout actually performed for a Class result. */
+  assignedWorkoutId?: string;
   /** When the workout was performed (ISO date string) */
   performedAt: string;
   /** The score type that was used */

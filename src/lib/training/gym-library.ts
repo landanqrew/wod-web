@@ -4,15 +4,17 @@ import { workoutToRow } from "../db/mappers";
 import { workouts } from "../db/schema";
 import type { Workout } from "../domain/models/workout";
 import { newId } from "../ids";
-import { workoutSchema } from "../validation";
-import { lockProgrammingGymInTransaction } from "./programmed-workout";
+import {
+  lockProgrammingGymInTransaction,
+  parseProgrammedWorkout,
+} from "./programmed-workout";
 
 export async function saveGymLibraryWorkout(
   gymId: string,
   athleteId: string,
   rawWorkout: unknown,
 ): Promise<string> {
-  const workout = workoutSchema.parse(rawWorkout) as Workout;
+  const workout = parseProgrammedWorkout(rawWorkout) as Workout;
   return db.transaction(async (tx) => {
     await lockProgrammingGymInTransaction(tx, gymId, athleteId, "Gym not found");
     const id = newId("wod");
@@ -34,10 +36,15 @@ export async function updateGymLibraryWorkout(
   workoutId: string,
   rawWorkout: unknown,
 ): Promise<void> {
-  const workout = workoutSchema.parse(rawWorkout) as Workout;
+  const workout = parseProgrammedWorkout(rawWorkout) as Workout;
   await db.transaction(async (tx) => {
     await lockProgrammingGymInTransaction(tx, gymId, athleteId, "Workout not found");
-    const { id: _id, createdAt: _createdAt, ...updatedWorkout } = workoutToRow(
+    const {
+      id: _id,
+      createdAt: _createdAt,
+      createdBy: _createdBy,
+      ...updatedWorkout
+    } = workoutToRow(
       { ...workout, id: workoutId, isBenchmark: false },
       athleteId,
       undefined,

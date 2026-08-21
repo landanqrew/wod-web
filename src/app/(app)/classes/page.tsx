@@ -10,6 +10,7 @@ import { getAllMovements } from "@/lib/domain/movements/library";
 import { checkMovement, mergeConstraints } from "@/lib/domain/scaling/constraint-engine";
 import { ensureUpcomingClassSessions } from "@/lib/training/gym-class";
 import { ensureAssignedWorkoutsForAthlete } from "@/lib/training/assigned-workout";
+import { toProgrammedSourceWorkout } from "@/lib/training/programmed-workout";
 import { ClassesClient } from "./classes-client";
 
 export default async function ClassesPage() {
@@ -93,7 +94,7 @@ export default async function ClassesPage() {
       coachesByGym={Object.fromEntries(ownerData.map(({ gymId, coaches }) => [gymId, coaches]))}
       movementOptionsBySession={movementOptionsBySession}
       libraryWorkoutsByGym={Object.fromEntries(libraryData)}
-      globalBenchmarks={globalBenchmarks}
+      globalBenchmarks={globalBenchmarks.map(toProgrammedSourceWorkout)}
     />
   );
 }

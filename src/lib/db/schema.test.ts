@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getTableConfig } from "drizzle-orm/pg-core";
-import { gyms, memberships, workouts } from "./schema";
+import { gyms, memberships, workoutResults, workouts } from "./schema";
 
 describe("workout authorship", () => {
   it("treats the author as nullable attribution", () => {
@@ -25,6 +25,18 @@ describe("Gym workout ownership", () => {
 
     expect(gymForeignKey?.onDelete).toBe("cascade");
     expect(workouts.gymId.notNull).toBe(false);
+  });
+});
+
+describe("Assigned Workout result lineage", () => {
+  it("retains a Result if its Assigned Workout is later removed", () => {
+    const assignedForeignKey = getTableConfig(workoutResults).foreignKeys.find(
+      (foreignKey) =>
+        foreignKey.reference().columns.some(
+          (column) => column.name === "assigned_workout_id",
+        ),
+    );
+    expect(assignedForeignKey?.onDelete).toBe("set null");
   });
 });
 

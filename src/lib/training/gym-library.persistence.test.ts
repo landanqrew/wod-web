@@ -5,8 +5,10 @@ import { db, pool } from "../db";
 import { workoutToRow } from "../db/mappers";
 import {
   athletes,
+  assignedWorkouts,
   gyms,
   programmedWorkouts,
+  reservations,
   users,
   workoutResults,
   workouts,
@@ -14,11 +16,13 @@ import {
 import { getClassSessionsForGym } from "../data/gym-class";
 import { getGymLibrary } from "../data/gym-library";
 import { ScoreType, WorkoutFormat, type Workout } from "../domain/models/workout";
+import { getBenchmark } from "../domain/generator/benchmark-library";
 import { newId } from "../ids";
 import { createGymForOwner } from "./gym";
 import { createClassForOwner } from "./gym-class";
 import { saveGymLibraryWorkout, updateGymLibraryWorkout } from "./gym-library";
 import { programGymDayFromSource } from "./programmed-workout";
+import { reserveClassSessionForAthlete } from "./reservation";
 
 const ownerUserId = newId("test_user");
 const ownerAthleteId = newId("test_ath");
@@ -83,16 +87,29 @@ describe("Gym workout library", () => {
     const sessions = await getClassSessionsForGym(gymId, ownerAthleteId, [classId]);
 
     const sourceWorkoutId = await saveGymLibraryWorkout(gymId, ownerAthleteId, template);
+    await expect(
+      saveGymLibraryWorkout(gymId, ownerAthleteId, getBenchmark("fran")),
+    ).rejects.toThrow();
     expect(sourceWorkoutId).not.toBe(template.id);
     await expect(getGymLibrary(gymId, ownerAthleteId)).resolves.toMatchObject([
-      { workout: { id: sourceWorkoutId, name: template.name }, lastRunAt: null, programmedRunCount: 0, results: [] },
+      { sourceKind: "gym", workout: { id: sourceWorkoutId, name: template.name }, lastRunAt: null, programmedRunCount: 0, results: [] },
     ]);
 
+    await reserveClassSessionForAthlete(
+      sessions[0].id,
+      ownerAthleteId,
+      new Date("2027-03-01T00:00:00Z"),
+    );
+    await reserveClassSessionForAthlete(
+      sessions[1].id,
+      ownerAthleteId,
+      new Date("2027-03-01T00:00:00Z"),
+    );
     await programGymDayFromSource(gymId, ownerAthleteId, "2027-04-02", sourceWorkoutId);
     await programGymDayFromSource(gymId, ownerAthleteId, "2027-04-09", sourceWorkoutId);
     await db.insert(workouts).values(
       workoutToRow(
-        { ...template, id: globalBenchmarkId, name: "Global Test", isBenchmark: true },
+        { ...getBenchmark("fran")!, id: globalBenchmarkId },
         null,
         "girl",
       ),
@@ -115,13 +132,51 @@ describe("Gym workout library", () => {
         .from(programmedWorkouts)
         .where(eq(programmedWorkouts.classSessionId, sessions[2].id)),
     ).resolves.toMatchObject([
-      { sourceWorkoutId: globalBenchmarkId, workout: { name: "Global Test" } },
+      {
+        sourceWorkoutId: globalBenchmarkId,
+        workout: {
+          name: "Fran",
+          movements: [
+            expect.objectContaining({
+              movementId: "thruster",
+              rxLoad: { male: 95, female: 65 },
+            }),
+            expect.anything(),
+          ],
+        },
+      },
     ]);
+    const globalHistory = await getGymLibrary(
+      gymId,
+      ownerAthleteId,
+      new Date("2027-04-20T00:00:00Z"),
+    );
+    expect(
+      globalHistory.find(({ workout }) => workout.id === globalBenchmarkId),
+    ).toMatchObject({
+      sourceKind: "global",
+      programmedRunCount: 1,
+      lastRunAt: sessions[2].startsAt.toISOString(),
+    });
+    const reservationRows = await db
+      .select({
+        classSessionId: reservations.classSessionId,
+        assignedWorkoutId: assignedWorkouts.id,
+      })
+      .from(reservations)
+      .innerJoin(
+        assignedWorkouts,
+        eq(assignedWorkouts.reservationId, reservations.id),
+      )
+      .where(eq(reservations.athleteId, ownerAthleteId));
     await db.insert(workoutResults).values([
       {
         id: newId("res"),
         athleteId: ownerAthleteId,
         workoutId: sourceWorkoutId,
+        assignedWorkoutId: reservationRows.find(
+          ({ classSessionId }) => classSessionId === sessions[0].id,
+        )!.assignedWorkoutId,
         performedAt: new Date("2027-04-02T12:00:00Z"),
         scoreType: ScoreType.RoundsAndReps,
         roundsCompleted: 8,
@@ -130,6 +185,9 @@ describe("Gym workout library", () => {
         id: newId("res"),
         athleteId: ownerAthleteId,
         workoutId: sourceWorkoutId,
+        assignedWorkoutId: reservationRows.find(
+          ({ classSessionId }) => classSessionId === sessions[1].id,
+        )!.assignedWorkoutId,
         performedAt: new Date("2027-04-09T12:00:00Z"),
         scoreType: ScoreType.RoundsAndReps,
         roundsCompleted: 9,
@@ -153,9 +211,17 @@ describe("Gym workout library", () => {
       .from(programmedWorkouts)
       .where(eq(programmedWorkouts.sourceWorkoutId, sourceWorkoutId));
     expect(programmedRows.map(({ workout }) => workout.timeCap)).toEqual([12, 12, 12]);
-    await expect(getGymLibrary(gymId, ownerAthleteId)).resolves.toMatchObject([
-      { workout: { name: "Friday Engine v2", timeCap: 15 } },
-    ]);
+    await expect(
+      db
+        .select({ createdBy: workouts.createdBy })
+        .from(workouts)
+        .where(eq(workouts.id, sourceWorkoutId)),
+    ).resolves.toEqual([{ createdBy: ownerAthleteId }]);
+    expect(
+      (await getGymLibrary(gymId, ownerAthleteId)).find(
+        ({ workout }) => workout.id === sourceWorkoutId,
+      ),
+    ).toMatchObject({ workout: { name: "Friday Engine v2", timeCap: 15 } });
 
     await expect(getGymLibrary(gymId, outsiderAthleteId)).rejects.toThrow("Gym not found");
     await expect(

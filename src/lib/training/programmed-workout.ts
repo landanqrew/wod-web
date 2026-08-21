@@ -33,6 +33,7 @@ import type { StationWarning } from "../domain/programming";
 import type { Muscle } from "../domain/models/body";
 import { getMovement } from "../domain/movements/library";
 import type { Workout } from "../domain/models/workout";
+import { changeProgrammedWorkoutFormat } from "../domain/programming/manual-workout";
 import { newId } from "../ids";
 import { programmedWorkoutSchema } from "../validation";
 import { materialiseAssignedWorkout } from "./assigned-workout";
@@ -46,6 +47,33 @@ export interface ProgrammedWorkoutWriteResult {
 
 export interface SessionStationWarning extends StationWarning {
   classSessionId: string;
+}
+
+export function toProgrammedSourceWorkout(source: Workout): Workout {
+  const withFormatDefaults = {
+    ...changeProgrammedWorkoutFormat(source, source.format),
+    ...source,
+  };
+  return {
+    ...withFormatDefaults,
+    movements: source.movements.map((prescription) => {
+      if (prescription.load === undefined) return prescription;
+      const movement = getMovement(prescription.movementId);
+      if (!movement || movement.loadType !== "weighted") return prescription;
+      const ratio =
+        movement.defaultLoadMale && movement.defaultLoadFemale
+          ? movement.defaultLoadFemale / movement.defaultLoadMale
+          : 0.7;
+      const { load, ...withoutLoad } = prescription;
+      return {
+        ...withoutLoad,
+        rxLoad: {
+          male: load,
+          female: Math.max(0, Math.round((load * ratio) / 5) * 5),
+        },
+      };
+    }),
+  };
 }
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -215,7 +243,7 @@ async function deriveRecoveryMusclesInTransaction(
   return recovering;
 }
 
-function parseProgrammedWorkout(raw: unknown): Workout {
+export function parseProgrammedWorkout(raw: unknown): Workout {
   const parsed = programmedWorkoutSchema.parse(raw);
   for (const prescription of parsed.movements) {
     if (prescription.load !== undefined) {
@@ -402,7 +430,9 @@ export async function programGymDayFromSource(
       gymId,
       athleteId,
       localDate,
-      rawWorkout ?? rowToWorkout(source),
+      toProgrammedSourceWorkout(
+        (rawWorkout as Workout | undefined) ?? rowToWorkout(source),
+      ),
       sourceWorkoutId,
     );
   });

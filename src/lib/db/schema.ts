@@ -348,6 +348,10 @@ export const workoutResults = pgTable(
     workoutId: text("workout_id")
       .notNull()
       .references(() => workouts.id, { onDelete: "cascade" }),
+    assignedWorkoutId: text("assigned_workout_id").references(
+      () => assignedWorkouts.id,
+      { onDelete: "set null" },
+    ),
     performedAt: timestamp("performed_at", { withTimezone: true }).notNull(),
     scoreType: text("score_type").notNull(),
     timeSeconds: integer("time_seconds"),

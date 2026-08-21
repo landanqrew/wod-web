@@ -256,6 +256,17 @@ export function ClassesClient({
     });
   }
 
+  function beginLibraryCreate() {
+    if (!selectedGym) return;
+    const workout = createManualProgrammedWorkout();
+    setProgrammingDraft({
+      gymId: selectedGym.id,
+      localDate: effectiveProgrammingDate,
+      workout,
+      movementsJson: JSON.stringify(workout.movements, null, 2),
+    });
+  }
+
   function beginProgrammedWorkoutEdit(session: ClassSessionSummary) {
     const workout = programmedWorkoutsBySession[session.id];
     if (!workout) return;
@@ -512,7 +523,14 @@ export function ClassesClient({
       {gyms.length > 1 ? (
         <div className="mb-4 flex flex-wrap gap-2">
           {gyms.map((gym) => (
-            <ChipToggle key={gym.id} active={gym.id === selectedGym?.id} onClick={() => setSelectedGymId(gym.id)}>
+            <ChipToggle
+              key={gym.id}
+              active={gym.id === selectedGym?.id}
+              onClick={() => {
+                setSelectedGymId(gym.id);
+                setSourceSelection("");
+              }}
+            >
               {gym.name}
             </ChipToggle>
           ))}
@@ -642,9 +660,11 @@ export function ClassesClient({
             <FieldRow label="Library source" className="min-w-56">
               <Select value={sourceSelection} onChange={(event) => setSourceSelection(event.target.value)}>
                 <option value="">Choose a saved or global workout</option>
-                {(libraryWorkoutsByGym[selectedGym.id] ?? []).map(({ workout }) => (
+                {(libraryWorkoutsByGym[selectedGym.id] ?? [])
+                  .filter(({ sourceKind }) => sourceKind === "gym")
+                  .map(({ workout }) => (
                   <option key={workout.id} value={workout.id}>Gym · {workout.name}</option>
-                ))}
+                  ))}
                 {globalBenchmarks.map((workout) => (
                   <option key={workout.id} value={workout.id}>Global · {workout.name}</option>
                 ))}
@@ -667,7 +687,13 @@ export function ClassesClient({
         <Card className="mb-4 flex flex-col gap-4 p-5">
           <div>
             <h2 className="text-lg font-bold">
-              {programmingDraft.sessionId ? "Edit this Class Session" : `Write ${programmingDraft.localDate} by hand`}
+              {programmingDraft.sessionId
+                ? "Edit this Class Session"
+                : programmingDraft.libraryWorkoutId
+                  ? "Edit Gym Library Workout"
+                  : programmingDraft.localDate
+                    ? `Write ${programmingDraft.localDate} by hand`
+                    : "Create Gym Library Workout"}
             </h2>
             <p className="text-xs text-subtle">
               Weighted movements use <code>rxLoad</code> with male and female values.
@@ -797,7 +823,7 @@ export function ClassesClient({
             />
           </FieldRow>
           <div className="flex gap-2">
-            {!programmingDraft.libraryWorkoutId ? (
+            {!programmingDraft.libraryWorkoutId && programmingDraft.localDate ? (
               <Button variant="primary" disabled={pending} onClick={saveProgrammedWorkout}>
                 {programmingDraft.sessionId ? "Save this Session" : "Publish gym-day"}
               </Button>
@@ -814,17 +840,24 @@ export function ClassesClient({
         </Card>
       ) : null}
 
-      {canProgram && selectedGym && (libraryWorkoutsByGym[selectedGym.id]?.length ?? 0) > 0 ? (
+      {canProgram && selectedGym ? (
         <Card className="mb-4 flex flex-col gap-3 p-5">
-          <div>
-            <h2 className="text-lg font-bold">Gym Library</h2>
-            <p className="text-xs text-subtle">House benchmarks and saved templates owned by {selectedGym.name}.</p>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-bold">Workout sources</h2>
+              <p className="text-xs text-subtle">Gym-owned templates remain separate from shared global benchmarks.</p>
+            </div>
+            <Button size="sm" disabled={pending} onClick={beginLibraryCreate}>Create Gym Workout</Button>
           </div>
-          {(libraryWorkoutsByGym[selectedGym.id] ?? []).map(({ workout, lastRunAt, programmedRunCount, results }) => (
+          {(libraryWorkoutsByGym[selectedGym.id] ?? []).map(({ sourceKind, workout, lastRunAt, programmedRunCount, results }) => (
             <div key={workout.id} className="rounded-xl border border-border p-3">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-semibold">{workout.name}</p>
-                <Button size="sm" disabled={pending} onClick={() => beginLibraryEdit(workout)}>Edit</Button>
+                <p className="text-sm font-semibold">
+                  {workout.name} <span className="text-xs font-normal text-subtle">· {sourceKind === "gym" ? "Gym Library" : "Global benchmark"}</span>
+                </p>
+                {sourceKind === "gym" ? (
+                  <Button size="sm" disabled={pending} onClick={() => beginLibraryEdit(workout)}>Edit</Button>
+                ) : null}
               </div>
               <p className="text-xs text-subtle">
                 {lastRunAt ? `Last run ${new Date(lastRunAt).toLocaleDateString()}` : "Never programmed"}

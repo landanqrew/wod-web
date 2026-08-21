@@ -1,12 +1,15 @@
 import "server-only";
-import { and, count, desc, eq, inArray, isNull, lte, max } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "../db";
 import { rowToResult, rowToWorkout } from "../db/mappers";
 import {
+  assignedWorkouts,
   classSessions,
+  gymClasses,
   gyms,
   memberships,
   programmedWorkouts,
+  reservations,
   workoutResults,
   workouts,
 } from "../db/schema";
@@ -55,45 +58,79 @@ export async function getGymLibrary(
     const rows = await tx
       .select({
         workout: workouts,
-        lastRunAt: max(classSessions.startsAt),
-        programmedRunCount: count(classSessions.id),
+        lastRunAt: sql<Date | null>`max(${classSessions.startsAt}) filter (
+          where ${gymClasses.gymId} = ${gymId}
+            and ${classSessions.startsAt} <= ${now}
+            and ${classSessions.cancelledAt} is null
+        )`.mapWith(classSessions.startsAt),
+        programmedRunCount: sql<number>`count(${classSessions.id}) filter (
+          where ${gymClasses.gymId} = ${gymId}
+            and ${classSessions.startsAt} <= ${now}
+            and ${classSessions.cancelledAt} is null
+        )`.mapWith(Number),
       })
       .from(workouts)
       .leftJoin(
         programmedWorkouts,
         eq(programmedWorkouts.sourceWorkoutId, workouts.id),
       )
-      .leftJoin(
-        classSessions,
-        and(
-          eq(classSessions.id, programmedWorkouts.classSessionId),
-          lte(classSessions.startsAt, now),
-          isNull(classSessions.cancelledAt),
+      .leftJoin(classSessions, eq(classSessions.id, programmedWorkouts.classSessionId))
+      .leftJoin(gymClasses, eq(gymClasses.id, classSessions.classId))
+      .where(
+        or(
+          eq(workouts.gymId, gymId),
+          and(isNull(workouts.gymId), eq(workouts.isBenchmark, true)),
         ),
       )
-      .where(eq(workouts.gymId, gymId))
       .groupBy(workouts.id)
-      .orderBy(desc(max(classSessions.startsAt)), workouts.name);
+      .orderBy(desc(sql`max(${classSessions.startsAt})`), workouts.name);
     const resultRows =
       rows.length === 0
         ? []
         : await tx
-            .select()
+            .select({
+              result: workoutResults,
+              sourceWorkoutId: programmedWorkouts.sourceWorkoutId,
+            })
             .from(workoutResults)
+            .innerJoin(
+              assignedWorkouts,
+              eq(assignedWorkouts.id, workoutResults.assignedWorkoutId),
+            )
+            .innerJoin(
+              reservations,
+              eq(reservations.id, assignedWorkouts.reservationId),
+            )
+            .innerJoin(
+              classSessions,
+              eq(classSessions.id, reservations.classSessionId),
+            )
+            .innerJoin(
+              gymClasses,
+              and(
+                eq(gymClasses.id, classSessions.classId),
+                eq(gymClasses.gymId, gymId),
+              ),
+            )
+            .innerJoin(
+              programmedWorkouts,
+              eq(programmedWorkouts.classSessionId, classSessions.id),
+            )
             .where(
               inArray(
-                workoutResults.workoutId,
+                programmedWorkouts.sourceWorkoutId,
                 rows.map(({ workout }) => workout.id),
               ),
             )
             .orderBy(desc(workoutResults.performedAt));
     return rows.map((row) => ({
+      sourceKind: row.workout.gymId === null ? "global" as const : "gym" as const,
       workout: hydrateWorkout(rowToWorkout(row.workout)),
       lastRunAt: row.lastRunAt?.toISOString() ?? null,
       programmedRunCount: row.programmedRunCount,
       results: resultRows
-        .filter(({ workoutId }) => workoutId === row.workout.id)
-        .map(rowToResult),
+        .filter(({ sourceWorkoutId }) => sourceWorkoutId === row.workout.id)
+        .map(({ result }) => rowToResult(result)),
     }));
   });
 }
