@@ -1,15 +1,17 @@
 import "dotenv/config";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db, pool } from "../db";
-import { athletes, gyms, users, workouts } from "../db/schema";
+import { athletes, gyms, memberships, users, workouts } from "../db/schema";
 import {
   getClassSessionsForGym,
   getUpcomingClassSessionsForAthlete,
 } from "../data/gym-class";
 import { getProgrammedWorkoutForSession } from "../data/programmed-workout";
-import { Equipment } from "../domain/models/equipment";
+import { Equipment, EQUIPMENT_PRESETS } from "../domain/models/equipment";
 import { MembershipRole } from "../domain/models/gym";
+import { Muscle } from "../domain/models/body";
+import { getMovementOrThrow } from "../domain/movements/library";
 import {
   ScoreType,
   WorkoutFormat,
@@ -17,11 +19,16 @@ import {
 } from "../domain/models/workout";
 import { newId } from "../ids";
 import { createClassForOwner } from "./gym-class";
-import { createGymForOwner, grantGymMembership } from "./gym";
+import {
+  createGymForOwner,
+  grantGymMembership,
+  updateGymForOwner,
+} from "./gym";
 import { upsertWorkout } from "./log";
 import {
   generateProgrammedWorkoutForGymDay,
   programGymDay,
+  programGymDayInTransaction,
   updateProgrammedWorkoutForSession,
 } from "./programmed-workout";
 import { reserveClassSessionForAthlete } from "./reservation";
@@ -145,14 +152,14 @@ describe("Programmed Workouts", () => {
       { ...manualWorkout, id: sourceWorkoutId, isBenchmark: true },
       ownerAthleteId,
     );
-    const programmedIds = await programGymDay(
+    const programmed = await programGymDay(
       gymId,
       coachAthleteId,
       "2027-03-01",
       manualWorkout,
       sourceWorkoutId,
     );
-    expect(programmedIds).toHaveLength(2);
+    expect(programmed.programmedWorkoutIds).toHaveLength(2);
     expect(
       await getUpcomingClassSessionsForAthlete(
         memberAthleteId,
@@ -273,5 +280,231 @@ describe("Programmed Workouts", () => {
         expect(prescription.load).toBeUndefined();
       }
     }
+
+    await updateGymForOwner(gymId, ownerAthleteId, {
+      name: "Iron Ridge",
+      recoveryWindowHours: 48,
+      floor: [...EQUIPMENT_PRESETS.fullGym]
+        .filter((equipment) => equipment !== Equipment.None)
+        .map((equipment) => ({ equipment })),
+    });
+    const recoveryClassId = await createClassForOwner(
+      gymId,
+      ownerAthleteId,
+      {
+        name: "Recovery Window Test",
+        coachAthleteId,
+        weeklyTimes: [
+          { dayOfWeek: 0, localTime: "08:00" },
+          { dayOfWeek: 1, localTime: "06:00" },
+          { dayOfWeek: 2, localTime: "06:00" },
+        ],
+        timeZone: "America/Chicago",
+        capacity: 20,
+      },
+      { startDate: "2027-03-07", endDate: "2027-03-09" },
+    );
+    await programGymDay(
+      gymId,
+      coachAthleteId,
+      "2027-03-07",
+      manualWorkout,
+    );
+    await programGymDay(gymId, coachAthleteId, "2027-03-08", {
+      ...manualWorkout,
+      id: newId("wod"),
+      name: "Metcon shoulders",
+      format: WorkoutFormat.AMRAP,
+      movements: [
+        {
+          movementId: "strict_press",
+          reps: 10,
+          rxLoad: { male: 95, female: 65 },
+        },
+      ],
+      rounds: undefined,
+      timeCap: 12,
+      scoreType: ScoreType.RoundsAndReps,
+    });
+    const warning = await programGymDay(
+      gymId,
+      coachAthleteId,
+      "2027-03-09",
+      {
+        ...manualWorkout,
+        id: newId("wod"),
+        movements: [
+          {
+            movementId: "front_squat",
+            reps: 5,
+            rxLoad: { male: 185, female: 125 },
+          },
+        ],
+      },
+    );
+    expect(warning.warningMuscles).toEqual(
+      expect.arrayContaining([Muscle.Quads, Muscle.Glutes]),
+    );
+    expect(warning.recoveringMuscles).not.toContain(Muscle.Shoulders);
+
+    const regenerated = await generateProgrammedWorkoutForGymDay(
+      gymId,
+      coachAthleteId,
+      "2027-03-09",
+      { format: WorkoutFormat.AMRAP, movementCount: 3 },
+    );
+    expect(regenerated.recoveringMuscles).toEqual(
+      expect.arrayContaining([Muscle.Quads, Muscle.Glutes]),
+    );
+    const recoverySessions = await getClassSessionsForGym(
+      gymId,
+      ownerAthleteId,
+      [recoveryClassId],
+    );
+    const generatedTarget = recoverySessions.find(
+      ({ localDate }) => localDate === "2027-03-09",
+    );
+    const generatedView = await getProgrammedWorkoutForSession(
+      generatedTarget!.id,
+      ownerAthleteId,
+    );
+    const recovering = new Set(regenerated.recoveringMuscles);
+    expect(
+      generatedView?.workout.movements.every((prescription) => {
+        const movement = getMovementOrThrow(prescription.movementId);
+        return [...movement.primaryMuscles, ...movement.secondaryMuscles].every(
+          (muscle) => !recovering.has(muscle),
+        );
+      }),
+    ).toBe(true);
+
+    const concurrentClassId = await createClassForOwner(
+      gymId,
+      ownerAthleteId,
+      {
+        name: "Concurrent Recovery Window",
+        coachAthleteId,
+        weeklyTimes: [
+          { dayOfWeek: 0, localTime: "08:00" },
+          { dayOfWeek: 1, localTime: "06:00" },
+        ],
+        timeZone: "America/Chicago",
+        capacity: 20,
+      },
+      { startDate: "2027-03-14", endDate: "2027-03-15" },
+    );
+    let releaseStrength: (() => void) | undefined;
+    const strengthCanCommit = new Promise<void>((resolve) => {
+      releaseStrength = resolve;
+    });
+    let strengthWritten: (() => void) | undefined;
+    const strengthIsWritten = new Promise<void>((resolve) => {
+      strengthWritten = resolve;
+    });
+    const concurrentStrength = db.transaction(async (tx) => {
+      await programGymDayInTransaction(
+        tx,
+        gymId!,
+        coachAthleteId,
+        "2027-03-14",
+        manualWorkout,
+      );
+      strengthWritten?.();
+      await strengthCanCommit;
+    });
+    await strengthIsWritten;
+    const concurrentGeneration = generateProgrammedWorkoutForGymDay(
+      gymId,
+      coachAthleteId,
+      "2027-03-15",
+      { format: WorkoutFormat.AMRAP, movementCount: 3 },
+    );
+    const generationState = await Promise.race([
+      concurrentGeneration.then(() => "completed" as const),
+      new Promise<"waiting">((resolve) =>
+        setTimeout(() => resolve("waiting"), 100),
+      ),
+    ]);
+    releaseStrength?.();
+    const [, concurrentResult] = await Promise.all([
+      concurrentStrength,
+      concurrentGeneration,
+    ]);
+    expect(generationState).toBe("waiting");
+    expect(concurrentResult.recoveringMuscles).toEqual(
+      expect.arrayContaining([Muscle.Quads, Muscle.Glutes]),
+    );
+    const concurrentSessions = await getClassSessionsForGym(
+      gymId,
+      ownerAthleteId,
+      [concurrentClassId],
+    );
+    const concurrentTarget = concurrentSessions.find(
+      ({ localDate }) => localDate === "2027-03-15",
+    );
+    const concurrentView = await getProgrammedWorkoutForSession(
+      concurrentTarget!.id,
+      ownerAthleteId,
+    );
+    const concurrentRecovering = new Set(concurrentResult.recoveringMuscles);
+    expect(
+      concurrentView?.workout.movements.every((prescription) => {
+        const movement = getMovementOrThrow(prescription.movementId);
+        return [...movement.primaryMuscles, ...movement.secondaryMuscles].every(
+          (muscle) => !concurrentRecovering.has(muscle),
+        );
+      }),
+    ).toBe(true);
+
+    let releaseRevocation: (() => void) | undefined;
+    const revocationCanCommit = new Promise<void>((resolve) => {
+      releaseRevocation = resolve;
+    });
+    let membershipDeleted: (() => void) | undefined;
+    const membershipIsDeleted = new Promise<void>((resolve) => {
+      membershipDeleted = resolve;
+    });
+    const blockingRevocation = db.transaction(async (tx) => {
+      await tx
+        .select({ athleteId: memberships.athleteId })
+        .from(memberships)
+        .where(
+          and(
+            eq(memberships.gymId, gymId!),
+            eq(memberships.athleteId, coachAthleteId),
+          ),
+        )
+        .for("update");
+      await tx
+        .delete(memberships)
+        .where(
+          and(
+            eq(memberships.gymId, gymId!),
+            eq(memberships.athleteId, coachAthleteId),
+          ),
+        );
+      membershipDeleted?.();
+      await revocationCanCommit;
+    });
+    await membershipIsDeleted;
+    const revokedCoachProgramming = programGymDay(
+      gymId,
+      coachAthleteId,
+      "2027-03-15",
+      manualWorkout,
+    );
+    const revokedCoachState = await Promise.race([
+      revokedCoachProgramming.then(
+        () => "completed" as const,
+        () => "denied" as const,
+      ),
+      new Promise<"waiting">((resolve) =>
+        setTimeout(() => resolve("waiting"), 100),
+      ),
+    ]);
+    releaseRevocation?.();
+    await blockingRevocation;
+    expect(revokedCoachState).toBe("waiting");
+    await expect(revokedCoachProgramming).rejects.toThrow("Gym not found");
   });
 });

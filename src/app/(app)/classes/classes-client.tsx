@@ -254,23 +254,28 @@ export function ClassesClient({
           programmingDraft.movementsJson,
         ) as MovementPrescription[];
         const workout = { ...programmingDraft.workout, movements };
-        if (programmingDraft.sessionId) {
-          await updateSessionProgrammedWorkoutAction(
+        const result = programmingDraft.sessionId
+          ? await updateSessionProgrammedWorkoutAction(
             programmingDraft.sessionId,
             workout,
-          );
-        } else {
-          await programGymDayAction(
+          )
+          : await programGymDayAction(
             programmingDraft.gymId,
             programmingDraft.localDate,
             workout,
           );
-        }
         toast.success(
           programmingDraft.sessionId
             ? "Class Session workout updated"
             : "Workout programmed for the gym-day",
         );
+        if (result.warningMuscles.length > 0) {
+          toast.warning(
+            `Strength recovery warning: ${result.warningMuscles
+              .map(formatLabel)
+              .join(", ")} were loaded inside this Gym's recovery window.`,
+          );
+        }
         setProgrammingDraft(null);
         router.refresh();
       } catch {
@@ -294,11 +299,18 @@ export function ClassesClient({
     if (!selectedGym) return;
     startTransition(async () => {
       try {
-        await generateGymDayAction(selectedGym.id, localDate, {
+        const result = await generateGymDayAction(selectedGym.id, localDate, {
           format: WorkoutFormat.AMRAP,
           movementCount: 3,
         });
         toast.success("Gym-floor workout programmed for the day");
+        if (result.recoveringMuscles.length > 0) {
+          toast.info(
+            `Generation avoided recovering Muscles: ${result.recoveringMuscles
+              .map(formatLabel)
+              .join(", ")}.`,
+          );
+        }
         router.refresh();
       } catch {
         toast.error("Could not generate a Programmed Workout for that day.");

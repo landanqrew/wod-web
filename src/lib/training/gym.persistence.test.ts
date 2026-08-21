@@ -101,6 +101,7 @@ describe("Gym floor persistence", () => {
       {
         id: gymId,
         name: "Iron Ridge",
+        recoveryWindowHours: 48,
         membershipRole: MembershipRole.Owner,
         floor: expect.arrayContaining([
           { equipment: Equipment.Rower, stationCount: 12 },
@@ -204,11 +205,13 @@ describe("Gym floor persistence", () => {
 
     await updateGymForOwner(gymId, athleteId, {
       name: "Iron Ridge CrossFit",
+      recoveryWindowHours: 72,
       floor: [{ equipment: Equipment.Rower, stationCount: 10 }],
     });
     expect(await getGymForAthlete(gymId, athleteId)).toEqual({
       id: gymId,
       name: "Iron Ridge CrossFit",
+      recoveryWindowHours: 72,
       membershipRole: MembershipRole.Owner,
       floor: [{ equipment: Equipment.Rower, stationCount: 10 }],
     });

@@ -236,3 +236,46 @@ describe("Class Session snapshot migration", () => {
     }
   });
 });
+
+describe("Gym Recovery Window migration", () => {
+  it("backfills the 48-hour default for an existing Gym", async () => {
+    await client.query("BEGIN");
+
+    try {
+      await client.query(`
+        CREATE SCHEMA issue_20_migration;
+        SET LOCAL search_path TO issue_20_migration;
+        CREATE TABLE gyms (
+          id text PRIMARY KEY,
+          name text NOT NULL,
+          created_at timestamp NOT NULL DEFAULT now(),
+          updated_at timestamp NOT NULL DEFAULT now()
+        );
+        INSERT INTO gyms (id, name) VALUES ('legacy-gym', 'Legacy Gym');
+      `);
+
+      const migration = await readFile(
+        new URL(
+          "../../../drizzle/0011_dapper_lenny_balinger.sql",
+          import.meta.url,
+        ),
+        "utf8",
+      );
+      for (const statement of migration.split("--> statement-breakpoint")) {
+        if (statement.trim()) await client.query(statement);
+      }
+
+      const result = await client.query(
+        `SELECT recovery_window_hours FROM gyms WHERE id = 'legacy-gym'`,
+      );
+      expect(result.rows).toEqual([{ recovery_window_hours: 48 }]);
+      await expect(
+        client.query(
+          `UPDATE gyms SET recovery_window_hours = -1 WHERE id = 'legacy-gym'`,
+        ),
+      ).rejects.toThrow("gyms_recovery_window_hours_check");
+    } finally {
+      await client.query("ROLLBACK");
+    }
+  });
+});

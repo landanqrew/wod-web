@@ -236,6 +236,7 @@ export const gymFloorEntrySchema = z.object({
 
 export const gymInputSchema = z.object({
   name: z.string().trim().min(1).max(120),
+  recoveryWindowHours: z.number().int().min(0).max(720).default(48),
   floor: z
     .array(gymFloorEntrySchema)
     .max(Object.values(Equipment).length)

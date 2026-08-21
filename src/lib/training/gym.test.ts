@@ -63,11 +63,29 @@ describe("Gym floor input", () => {
       }),
     ).toEqual({
       name: "Iron Ridge",
+      recoveryWindowHours: 48,
       floor: [
         { equipment: Equipment.Rower, stationCount: 12 },
         { equipment: Equipment.Barbell },
       ],
     });
+  });
+
+  it("accepts a configurable Recovery Window and rejects invalid lengths", () => {
+    expect(
+      gymInputSchema.parse({
+        name: "Iron Ridge",
+        recoveryWindowHours: 72,
+        floor: [],
+      }),
+    ).toMatchObject({ recoveryWindowHours: 72 });
+    expect(() =>
+      gymInputSchema.parse({
+        name: "Iron Ridge",
+        recoveryWindowHours: -1,
+        floor: [],
+      }),
+    ).toThrow();
   });
 
   it("rejects duplicate equipment and invalid Station counts", () => {

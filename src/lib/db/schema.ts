@@ -151,12 +151,22 @@ export const workouts = pgTable(
   (t) => [index("workouts_created_by_idx").on(t.createdBy)]
 );
 
-export const gyms = pgTable("gyms", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+export const gyms = pgTable(
+  "gyms",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    recoveryWindowHours: integer("recovery_window_hours").notNull().default(48),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    check(
+      "gyms_recovery_window_hours_check",
+      sql`${t.recoveryWindowHours} >= 0 AND ${t.recoveryWindowHours} <= 720`,
+    ),
+  ],
+);
 
 export const memberships = pgTable(
   "memberships",
