@@ -1,4 +1,4 @@
-import { and, count, eq, gt } from "drizzle-orm";
+import { and, count, eq, gt, notExists } from "drizzle-orm";
 import { db } from "../db";
 import {
   classSessions,
@@ -7,6 +7,8 @@ import {
   memberships,
   programmedWorkouts,
   reservations,
+  workoutResults,
+  workouts,
 } from "../db/schema";
 import { newId } from "../ids";
 import { materialiseAssignedWorkout } from "./assigned-workout";
@@ -173,6 +175,21 @@ export async function cancelReservationForAthlete(
       };
     }
     await tx.delete(reservations).where(eq(reservations.id, reservation.id));
+    if (assigned) {
+      await tx
+        .delete(workouts)
+        .where(
+          and(
+            eq(workouts.id, assigned.id),
+            notExists(
+              tx
+                .select({ id: workoutResults.id })
+                .from(workoutResults)
+                .where(eq(workoutResults.workoutId, assigned.id)),
+            ),
+          ),
+        );
+    }
     return {
       cancelled: true as const,
       discardedAssignedWorkout: Boolean(assigned),

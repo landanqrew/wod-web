@@ -245,9 +245,15 @@ describe("Gym Library migration", () => {
         CREATE SCHEMA issue_23_migration;
         SET LOCAL search_path TO issue_23_migration;
         CREATE TABLE gyms (id text PRIMARY KEY);
-        CREATE TABLE workouts (id text PRIMARY KEY, name text NOT NULL);
+        CREATE TABLE workouts (
+          id text PRIMARY KEY,
+          name text NOT NULL,
+          movements jsonb NOT NULL DEFAULT '[]'
+        );
         INSERT INTO gyms (id) VALUES ('gym-1');
-        INSERT INTO workouts (id, name) VALUES ('legacy-workout', 'Legacy');
+        INSERT INTO workouts (id, name, movements) VALUES
+          ('legacy-workout', 'Legacy', '[]'),
+          ('benchmark_fran', 'Fran', '[{"movementId":"thruster","reps":21,"load":95,"notes":"21-15-9"},{"movementId":"pull_up","reps":21}]');
       `);
       const migration = (
         await readFile(
@@ -259,16 +265,38 @@ describe("Gym Library migration", () => {
         if (statement.trim()) await client.query(statement);
       }
       const legacy = await client.query(
-        `SELECT id, gym_id, updated_at IS NOT NULL AS has_updated_at FROM workouts`,
+        `SELECT id, gym_id, updated_at IS NOT NULL AS has_updated_at, movements FROM workouts ORDER BY id`,
       );
       expect(legacy.rows).toEqual([
-        { id: "legacy-workout", gym_id: null, has_updated_at: true },
+        {
+          id: "benchmark_fran",
+          gym_id: null,
+          has_updated_at: true,
+          movements: [
+            {
+              movementId: "thruster",
+              reps: 21,
+              load: 95,
+              notes: "21-15-9",
+              rxLoad: { male: 95, female: 65 },
+            },
+            { movementId: "pull_up", reps: 21 },
+          ],
+        },
+        {
+          id: "legacy-workout",
+          gym_id: null,
+          has_updated_at: true,
+          movements: [],
+        },
       ]);
       await client.query(
         `UPDATE workouts SET gym_id = 'gym-1' WHERE id = 'legacy-workout'`,
       );
       await client.query(`DELETE FROM gyms WHERE id = 'gym-1'`);
-      expect((await client.query(`SELECT id FROM workouts`)).rows).toEqual([]);
+      expect((await client.query(`SELECT id FROM workouts`)).rows).toEqual([
+        { id: "benchmark_fran" },
+      ]);
     } finally {
       await client.query("ROLLBACK");
     }
@@ -313,6 +341,8 @@ describe("Class result lineage migration", () => {
             class_session_id = 'session-1'
       `);
       await client.query(`DELETE FROM assigned_workouts WHERE id = 'assigned-1'`);
+      await client.query(`DELETE FROM workouts WHERE id = 'source-1'`);
+      await client.query(`DELETE FROM class_sessions WHERE id = 'session-1'`);
       expect(
         (await client.query(`
           SELECT id, assigned_workout_id, source_workout_id, class_session_id

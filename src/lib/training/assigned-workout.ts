@@ -212,7 +212,7 @@ function snapshotsEqual(
   return isDeepStrictEqual(left, right);
 }
 
-async function syncAssignedWorkoutLedger(
+export async function syncAssignedWorkoutLedger(
   tx: Transaction,
   athleteId: string,
   snapshot: ReconciliationSnapshot,
