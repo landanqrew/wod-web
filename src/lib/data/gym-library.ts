@@ -1,5 +1,5 @@
 import "server-only";
-import { and, count, desc, eq, inArray, max } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, lte, max } from "drizzle-orm";
 import { db } from "../db";
 import { rowToResult, rowToWorkout } from "../db/mappers";
 import {
@@ -21,6 +21,7 @@ import { hydrateWorkout } from "./training";
 export async function getGymLibrary(
   gymId: string,
   athleteId: string,
+  now = new Date(),
 ): Promise<GymLibraryWorkout[]> {
   return db.transaction(async (tx) => {
     const [gym] = await tx
@@ -55,7 +56,7 @@ export async function getGymLibrary(
       .select({
         workout: workouts,
         lastRunAt: max(classSessions.startsAt),
-        programmedRunCount: count(programmedWorkouts.id),
+        programmedRunCount: count(classSessions.id),
       })
       .from(workouts)
       .leftJoin(
@@ -64,7 +65,11 @@ export async function getGymLibrary(
       )
       .leftJoin(
         classSessions,
-        eq(classSessions.id, programmedWorkouts.classSessionId),
+        and(
+          eq(classSessions.id, programmedWorkouts.classSessionId),
+          lte(classSessions.startsAt, now),
+          isNull(classSessions.cancelledAt),
+        ),
       )
       .where(eq(workouts.gymId, gymId))
       .groupBy(workouts.id)

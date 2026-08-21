@@ -78,7 +78,7 @@ describe("Gym workout library", () => {
         timeZone: "America/Chicago",
         capacity: 20,
       },
-      { startDate: "2027-04-02", endDate: "2027-04-16" },
+      { startDate: "2027-04-02", endDate: "2027-04-23" },
     );
     const sessions = await getClassSessionsForGym(gymId, ownerAthleteId, [classId]);
 
@@ -102,6 +102,12 @@ describe("Gym workout library", () => {
       ownerAthleteId,
       "2027-04-16",
       globalBenchmarkId,
+    );
+    await programGymDayFromSource(
+      gymId,
+      ownerAthleteId,
+      "2027-04-23",
+      sourceWorkoutId,
     );
     await expect(
       db
@@ -129,7 +135,11 @@ describe("Gym workout library", () => {
         roundsCompleted: 9,
       },
     ]);
-    const [history] = await getGymLibrary(gymId, ownerAthleteId);
+    const [history] = await getGymLibrary(
+      gymId,
+      ownerAthleteId,
+      new Date("2027-04-10T00:00:00Z"),
+    );
     expect(history).toMatchObject({ programmedRunCount: 2, results: [{ roundsCompleted: 9 }, { roundsCompleted: 8 }] });
     expect(history.lastRunAt).toBe(sessions[1].startsAt.toISOString());
 
@@ -142,7 +152,7 @@ describe("Gym workout library", () => {
       .select()
       .from(programmedWorkouts)
       .where(eq(programmedWorkouts.sourceWorkoutId, sourceWorkoutId));
-    expect(programmedRows.map(({ workout }) => workout.timeCap)).toEqual([12, 12]);
+    expect(programmedRows.map(({ workout }) => workout.timeCap)).toEqual([12, 12, 12]);
     await expect(getGymLibrary(gymId, ownerAthleteId)).resolves.toMatchObject([
       { workout: { name: "Friday Engine v2", timeCap: 15 } },
     ]);
