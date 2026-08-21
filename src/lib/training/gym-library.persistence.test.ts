@@ -169,6 +169,19 @@ describe("Gym workout library", () => {
         eq(assignedWorkouts.reservationId, reservations.id),
       )
       .where(eq(reservations.athleteId, ownerAthleteId));
+    await expect(
+      db
+        .select({ id: workouts.id })
+        .from(workouts)
+        .where(
+          eq(
+            workouts.id,
+            reservationRows.find(
+              ({ classSessionId }) => classSessionId === sessions[0].id,
+            )!.assignedWorkoutId,
+          ),
+        ),
+    ).resolves.toHaveLength(1);
     await db.insert(workoutResults).values([
       {
         id: newId("res"),
@@ -177,6 +190,8 @@ describe("Gym workout library", () => {
         assignedWorkoutId: reservationRows.find(
           ({ classSessionId }) => classSessionId === sessions[0].id,
         )!.assignedWorkoutId,
+        sourceWorkoutId,
+        classSessionId: sessions[0].id,
         performedAt: new Date("2027-04-02T12:00:00Z"),
         scoreType: ScoreType.RoundsAndReps,
         roundsCompleted: 8,
@@ -188,6 +203,8 @@ describe("Gym workout library", () => {
         assignedWorkoutId: reservationRows.find(
           ({ classSessionId }) => classSessionId === sessions[1].id,
         )!.assignedWorkoutId,
+        sourceWorkoutId,
+        classSessionId: sessions[1].id,
         performedAt: new Date("2027-04-09T12:00:00Z"),
         scoreType: ScoreType.RoundsAndReps,
         roundsCompleted: 9,
@@ -200,6 +217,29 @@ describe("Gym workout library", () => {
     );
     expect(history).toMatchObject({ programmedRunCount: 2, results: [{ roundsCompleted: 9 }, { roundsCompleted: 8 }] });
     expect(history.lastRunAt).toBe(sessions[1].startsAt.toISOString());
+    const firstAssignedWorkoutId = reservationRows.find(
+      ({ classSessionId }) => classSessionId === sessions[0].id,
+    )!.assignedWorkoutId;
+    await db
+      .delete(assignedWorkouts)
+      .where(eq(assignedWorkouts.id, firstAssignedWorkoutId));
+    await db
+      .update(programmedWorkouts)
+      .set({ sourceWorkoutId: globalBenchmarkId })
+      .where(eq(programmedWorkouts.classSessionId, sessions[0].id));
+    const durableHistory = await getGymLibrary(
+      gymId,
+      ownerAthleteId,
+      new Date("2027-04-10T00:00:00Z"),
+    );
+    expect(
+      durableHistory.find(({ workout }) => workout.id === sourceWorkoutId)
+        ?.results,
+    ).toHaveLength(2);
+    await db
+      .update(programmedWorkouts)
+      .set({ sourceWorkoutId })
+      .where(eq(programmedWorkouts.classSessionId, sessions[0].id));
 
     await updateGymLibraryWorkout(gymId, ownerAthleteId, sourceWorkoutId, {
       ...template,

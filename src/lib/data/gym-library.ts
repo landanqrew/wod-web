@@ -3,13 +3,11 @@ import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "../db";
 import { rowToResult, rowToWorkout } from "../db/mappers";
 import {
-  assignedWorkouts,
   classSessions,
   gymClasses,
   gyms,
   memberships,
   programmedWorkouts,
-  reservations,
   workoutResults,
   workouts,
 } from "../db/schema";
@@ -55,14 +53,15 @@ export async function getGymLibrary(
     ) {
       throw new Error("Gym not found");
     }
+    const lastRunAtExpression = sql<Date | null>`max(${classSessions.startsAt}) filter (
+      where ${gymClasses.gymId} = ${gymId}
+        and ${classSessions.startsAt} <= ${now}
+        and ${classSessions.cancelledAt} is null
+    )`.mapWith(classSessions.startsAt);
     const rows = await tx
       .select({
         workout: workouts,
-        lastRunAt: sql<Date | null>`max(${classSessions.startsAt}) filter (
-          where ${gymClasses.gymId} = ${gymId}
-            and ${classSessions.startsAt} <= ${now}
-            and ${classSessions.cancelledAt} is null
-        )`.mapWith(classSessions.startsAt),
+        lastRunAt: lastRunAtExpression,
         programmedRunCount: sql<number>`count(${classSessions.id}) filter (
           where ${gymClasses.gymId} = ${gymId}
             and ${classSessions.startsAt} <= ${now}
@@ -83,27 +82,19 @@ export async function getGymLibrary(
         ),
       )
       .groupBy(workouts.id)
-      .orderBy(desc(sql`max(${classSessions.startsAt})`), workouts.name);
+      .orderBy(sql`${lastRunAtExpression} desc nulls last`, workouts.name);
     const resultRows =
       rows.length === 0
         ? []
         : await tx
             .select({
               result: workoutResults,
-              sourceWorkoutId: programmedWorkouts.sourceWorkoutId,
+              sourceWorkoutId: workoutResults.sourceWorkoutId,
             })
             .from(workoutResults)
             .innerJoin(
-              assignedWorkouts,
-              eq(assignedWorkouts.id, workoutResults.assignedWorkoutId),
-            )
-            .innerJoin(
-              reservations,
-              eq(reservations.id, assignedWorkouts.reservationId),
-            )
-            .innerJoin(
               classSessions,
-              eq(classSessions.id, reservations.classSessionId),
+              eq(classSessions.id, workoutResults.classSessionId),
             )
             .innerJoin(
               gymClasses,
@@ -112,13 +103,9 @@ export async function getGymLibrary(
                 eq(gymClasses.gymId, gymId),
               ),
             )
-            .innerJoin(
-              programmedWorkouts,
-              eq(programmedWorkouts.classSessionId, classSessions.id),
-            )
             .where(
               inArray(
-                programmedWorkouts.sourceWorkoutId,
+                workoutResults.sourceWorkoutId,
                 rows.map(({ workout }) => workout.id),
               ),
             )

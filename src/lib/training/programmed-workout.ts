@@ -60,18 +60,11 @@ export function toProgrammedSourceWorkout(source: Workout): Workout {
       if (prescription.load === undefined) return prescription;
       const movement = getMovement(prescription.movementId);
       if (!movement || movement.loadType !== "weighted") return prescription;
-      const ratio =
-        movement.defaultLoadMale && movement.defaultLoadFemale
-          ? movement.defaultLoadFemale / movement.defaultLoadMale
-          : 0.7;
+      if (!prescription.rxLoad) {
+        throw new Error(`Source Workout lacks a female Rx load for ${movement.name}`);
+      }
       const { load, ...withoutLoad } = prescription;
-      return {
-        ...withoutLoad,
-        rxLoad: {
-          male: load,
-          female: Math.max(0, Math.round((load * ratio) / 5) * 5),
-        },
-      };
+      return withoutLoad;
     }),
   };
 }

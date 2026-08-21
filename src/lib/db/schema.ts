@@ -352,6 +352,12 @@ export const workoutResults = pgTable(
       () => assignedWorkouts.id,
       { onDelete: "set null" },
     ),
+    sourceWorkoutId: text("source_workout_id").references(() => workouts.id, {
+      onDelete: "set null",
+    }),
+    classSessionId: text("class_session_id").references(() => classSessions.id, {
+      onDelete: "set null",
+    }),
     performedAt: timestamp("performed_at", { withTimezone: true }).notNull(),
     scoreType: text("score_type").notNull(),
     timeSeconds: integer("time_seconds"),
@@ -368,7 +374,11 @@ export const workoutResults = pgTable(
     notes: text("notes"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
-  (t) => [index("workout_results_athlete_performed_idx").on(t.athleteId, t.performedAt)]
+  (t) => [
+    index("workout_results_athlete_performed_idx").on(t.athleteId, t.performedAt),
+    index("workout_results_assigned_idx").on(t.assignedWorkoutId),
+    index("workout_results_source_session_idx").on(t.sourceWorkoutId, t.classSessionId),
+  ]
 );
 
 export const personalRecords = pgTable(

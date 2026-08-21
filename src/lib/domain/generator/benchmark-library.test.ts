@@ -20,6 +20,22 @@ describe("benchmark library", () => {
     }
   });
 
+  it("carries canonical female Rx loads for weighted programming", () => {
+    for (const benchmark of getAllBenchmarks()) {
+      for (const prescription of benchmark.movements) {
+        if (prescription.load !== undefined) {
+          expect(prescription.rxLoad).toMatchObject({
+            male: prescription.load,
+            female: expect.any(Number),
+          });
+        }
+      }
+    }
+    expect(getBenchmark("Grace")?.movements[0].rxLoad).toEqual({ male: 135, female: 95 });
+    expect(getBenchmark("Diane")?.movements[0].rxLoad).toEqual({ male: 225, female: 155 });
+    expect(getBenchmark("Kalsu")?.movements[0].rxLoad).toEqual({ male: 135, female: 95 });
+  });
+
   it("all benchmark IDs are unique", () => {
     const ids = BENCHMARK_LIBRARY.map((b) => b.id);
     expect(new Set(ids).size).toBe(ids.length);

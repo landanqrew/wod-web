@@ -232,7 +232,9 @@ export function ClassesClient({
   function beginFromSource(localDate: string) {
     if (!selectedGym || !sourceSelection) return;
     const source = [
-      ...(libraryWorkoutsByGym[selectedGym.id] ?? []).map(({ workout }) => workout),
+      ...(libraryWorkoutsByGym[selectedGym.id] ?? [])
+        .filter(({ sourceKind }) => sourceKind === "gym")
+        .map(({ workout }) => workout),
       ...globalBenchmarks,
     ].find(({ id }) => id === sourceSelection);
     if (!source) return;

@@ -11,6 +11,10 @@ export interface WorkoutResult {
   workoutId: string;
   /** Assigned Workout actually performed for a Class result. */
   assignedWorkoutId?: string;
+  /** Source identity snapshotted when a Class result is logged. */
+  sourceWorkoutId?: string;
+  /** Class context snapshotted when a Class result is logged. */
+  classSessionId?: string;
   /** When the workout was performed (ISO date string) */
   performedAt: string;
   /** The score type that was used */

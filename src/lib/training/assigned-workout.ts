@@ -11,8 +11,9 @@ import {
   loadAdjustments,
   programmedWorkouts,
   reservations,
+  workouts,
 } from "../db/schema";
-import { rowToAthlete } from "../db/mappers";
+import { rowToAthlete, workoutToRow } from "../db/mappers";
 import type { Equipment } from "../domain/models/equipment";
 import { Sex } from "../domain/models/athlete";
 import type { AssignedMovementProvenance } from "../domain/models/assigned-workout";
@@ -211,6 +212,24 @@ function snapshotsEqual(
   return isDeepStrictEqual(left, right);
 }
 
+async function syncAssignedWorkoutLedger(
+  tx: Transaction,
+  athleteId: string,
+  snapshot: ReconciliationSnapshot,
+) {
+  const { id: _id, createdAt: _createdAt, ...values } = workoutToRow(
+    snapshot.workout,
+    athleteId,
+  );
+  await tx
+    .insert(workouts)
+    .values(workoutToRow(snapshot.workout, athleteId))
+    .onConflictDoUpdate({
+      target: workouts.id,
+      set: { ...values, updatedAt: new Date() },
+    });
+}
+
 export async function materialiseAssignedWorkout(
   tx: Transaction,
   input: {
@@ -255,6 +274,7 @@ export async function materialiseAssignedWorkout(
         .set({ ...reconciled, updatedAt: new Date() })
         .where(eq(assignedWorkouts.id, existing.id));
     }
+    await syncAssignedWorkoutLedger(tx, input.athleteId, reconciled);
     return existing.id;
   }
 
@@ -267,13 +287,21 @@ export async function materialiseAssignedWorkout(
     })
     .onConflictDoNothing({ target: assignedWorkouts.reservationId })
     .returning({ id: assignedWorkouts.id });
-  if (stored) return stored.id;
+  if (stored) {
+    await syncAssignedWorkoutLedger(tx, input.athleteId, derived);
+    return stored.id;
+  }
   const [conflict] = await tx
-    .select({ id: assignedWorkouts.id })
+    .select()
     .from(assignedWorkouts)
     .where(eq(assignedWorkouts.reservationId, input.reservationId))
     .limit(1);
   if (!conflict) throw new Error("Assigned Workout was not materialised");
+  await syncAssignedWorkoutLedger(tx, input.athleteId, {
+    workout: conflict.workout,
+    provenance: conflict.provenance,
+    changes: conflict.changes,
+  });
   return conflict.id;
 }
 

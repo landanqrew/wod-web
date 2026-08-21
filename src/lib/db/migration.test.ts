@@ -275,6 +275,62 @@ describe("Gym Library migration", () => {
   });
 });
 
+describe("Class result lineage migration", () => {
+  it("adds durable nullable lineage without losing legacy Results", async () => {
+    await client.query("BEGIN");
+    try {
+      await client.query(`
+        CREATE SCHEMA issue_23_result_migration;
+        SET LOCAL search_path TO issue_23_result_migration;
+        CREATE TABLE assigned_workouts (id text PRIMARY KEY);
+        CREATE TABLE workouts (id text PRIMARY KEY);
+        CREATE TABLE class_sessions (id text PRIMARY KEY);
+        CREATE TABLE workout_results (id text PRIMARY KEY);
+        INSERT INTO assigned_workouts VALUES ('assigned-1');
+        INSERT INTO workouts VALUES ('source-1');
+        INSERT INTO class_sessions VALUES ('session-1');
+        INSERT INTO workout_results VALUES ('result-1');
+      `);
+      for (const migrationName of [
+        "0013_spicy_scourge.sql",
+        "0014_nice_lady_deathstrike.sql",
+      ]) {
+        const migration = (
+          await readFile(
+            new URL(`../../../drizzle/${migrationName}`, import.meta.url),
+            "utf8",
+          )
+        ).replaceAll('"public".', '"issue_23_result_migration".');
+        for (const statement of migration.split("--> statement-breakpoint")) {
+          if (statement.trim()) await client.query(statement);
+        }
+      }
+      await client.query(`
+        UPDATE workout_results
+        SET assigned_workout_id = 'assigned-1',
+            source_workout_id = 'source-1',
+            class_session_id = 'session-1'
+      `);
+      await client.query(`DELETE FROM assigned_workouts WHERE id = 'assigned-1'`);
+      expect(
+        (await client.query(`
+          SELECT id, assigned_workout_id, source_workout_id, class_session_id
+          FROM workout_results
+        `)).rows,
+      ).toEqual([
+        {
+          id: "result-1",
+          assigned_workout_id: null,
+          source_workout_id: "source-1",
+          class_session_id: "session-1",
+        },
+      ]);
+    } finally {
+      await client.query("ROLLBACK");
+    }
+  });
+});
+
 describe("Gym Recovery Window migration", () => {
   it("backfills the 48-hour default for an existing Gym", async () => {
     await client.query("BEGIN");
