@@ -99,6 +99,12 @@ export function ClassesClient({
   const [pending, startTransition] = React.useTransition();
   const selectedGym = gyms.find(({ id }) => id === selectedGymId) ?? gyms[0];
 
+  function refreshClasses() {
+    setRosterSessionId(null);
+    setRoster(null);
+    router.refresh();
+  }
+
   function toggleRoster(classSessionId: string) {
     if (rosterSessionId === classSessionId) {
       setRosterSessionId(null);
@@ -151,7 +157,7 @@ export function ClassesClient({
         toast.success(draft.id ? "Class schedule updated" : "Class created");
         setSelectedGymId(draft.gymId);
         setDraft(null);
-        router.refresh();
+        refreshClasses();
       } catch {
         toast.error("Could not save the Class definition.");
       }
@@ -163,7 +169,7 @@ export function ClassesClient({
       try {
         await cancelClassSessionAction(classSessionId);
         toast.success("Class Session cancelled");
-        router.refresh();
+        refreshClasses();
       } catch {
         toast.error("Could not cancel that Class Session.");
       }
@@ -192,7 +198,7 @@ export function ClassesClient({
           if (!result.cancelled) throw new Error("Cancellation was not confirmed");
         } else await reserveClassSessionAction(session.id);
         toast.success(session.reserved ? "Reservation cancelled" : "Spot reserved");
-        router.refresh();
+        refreshClasses();
       } catch {
         toast.error("Could not update that Reservation. The Class may be full.");
       }
@@ -247,7 +253,7 @@ export function ClassesClient({
         }
         showStationWarnings(result.stationWarnings);
         setProgrammingDraft(null);
-        router.refresh();
+        refreshClasses();
       } catch {
         toast.error("Could not save that Programmed Workout. Check the prescription.");
       }
@@ -275,7 +281,7 @@ export function ClassesClient({
           toast.info(`Generation avoided recovering Muscles: ${result.recoveringMuscles.map(formatLabel).join(", ")}.`);
         }
         showStationWarnings(result.stationWarnings);
-        router.refresh();
+        refreshClasses();
       } catch {
         toast.error("Could not generate a Programmed Workout for that day.");
       }
@@ -355,7 +361,7 @@ export function ClassesClient({
         } else setPromotionPrompt(null);
         toast.success("Assigned Workout updated");
         setOverrideDraft(null);
-        router.refresh();
+        refreshClasses();
       } catch {
         toast.error("Could not apply that override. Check the Movement and Gym floor.");
       }
@@ -381,7 +387,7 @@ export function ClassesClient({
           toast.success("Load Adjustment will apply to future programmed loads");
         }
         setPromotionPrompt(null);
-        router.refresh();
+        refreshClasses();
       } catch {
         toast.error("Could not create that Load Adjustment.");
       }
