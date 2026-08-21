@@ -63,18 +63,19 @@ export class PRTracker {
 
   private checkWorkoutPRs(result: WorkoutResult): PersonalRecord[] {
     const prs: PersonalRecord[] = [];
+    const referenceId = result.sourceWorkoutId ?? result.workoutId;
 
     switch (result.scoreType) {
       case ScoreType.Time: {
         if (result.timeSeconds !== undefined) {
           const existing = this.getCurrentTimePR(
             result.athleteId,
-            result.workoutId,
+            referenceId,
             "fastest_time"
           );
           if (!existing || result.timeSeconds < existing.value) {
             prs.push(
-              this.makePR(result, "workout", result.workoutId, "fastest_time",
+              this.makePR(result, "workout", referenceId, "fastest_time",
                 result.timeSeconds, "seconds", existing?.value)
             );
           }
@@ -88,12 +89,12 @@ export class PRTracker {
             result.roundsCompleted * 1000 + (result.partialReps ?? 0);
           const existing = this.getCurrentPR(
             result.athleteId,
-            result.workoutId,
+            referenceId,
             "most_rounds"
           );
           if (!existing || score > existing.value) {
             prs.push(
-              this.makePR(result, "workout", result.workoutId, "most_rounds",
+              this.makePR(result, "workout", referenceId, "most_rounds",
                 score, "rounds_reps", existing?.value)
             );
           }
@@ -104,12 +105,12 @@ export class PRTracker {
         if (result.peakLoad !== undefined) {
           const existing = this.getCurrentPR(
             result.athleteId,
-            result.workoutId,
+            referenceId,
             "heaviest_load"
           );
           if (!existing || result.peakLoad > existing.value) {
             prs.push(
-              this.makePR(result, "workout", result.workoutId, "heaviest_load",
+              this.makePR(result, "workout", referenceId, "heaviest_load",
                 result.peakLoad, "lbs", existing?.value)
             );
           }
@@ -120,12 +121,12 @@ export class PRTracker {
         if (result.totalReps !== undefined) {
           const existing = this.getCurrentPR(
             result.athleteId,
-            result.workoutId,
+            referenceId,
             "max_reps"
           );
           if (!existing || result.totalReps > existing.value) {
             prs.push(
-              this.makePR(result, "workout", result.workoutId, "max_reps",
+              this.makePR(result, "workout", referenceId, "max_reps",
                 result.totalReps, "reps", existing?.value)
             );
           }
@@ -136,12 +137,12 @@ export class PRTracker {
         if (result.totalCalories !== undefined) {
           const existing = this.getCurrentPR(
             result.athleteId,
-            result.workoutId,
+            referenceId,
             "max_reps"
           );
           if (!existing || result.totalCalories > existing.value) {
             prs.push(
-              this.makePR(result, "workout", result.workoutId, "max_reps",
+              this.makePR(result, "workout", referenceId, "max_reps",
                 result.totalCalories, "calories", existing?.value)
             );
           }
@@ -152,12 +153,12 @@ export class PRTracker {
         if (result.totalDistance !== undefined) {
           const existing = this.getCurrentPR(
             result.athleteId,
-            result.workoutId,
+            referenceId,
             "max_reps"
           );
           if (!existing || result.totalDistance > existing.value) {
             prs.push(
-              this.makePR(result, "workout", result.workoutId, "max_reps",
+              this.makePR(result, "workout", referenceId, "max_reps",
                 result.totalDistance, "meters", existing?.value)
             );
           }

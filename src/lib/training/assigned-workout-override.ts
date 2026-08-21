@@ -10,6 +10,7 @@ import {
   impediments,
   programmedWorkouts,
   reservations,
+  workoutResults,
 } from "../db/schema";
 import { rowToAthlete } from "../db/mappers";
 import type { AssignedMovementProvenance } from "../domain/models/assigned-workout";
@@ -145,6 +146,12 @@ export async function overrideAssignedWorkoutForAthlete(
       .where(eq(programmedWorkouts.classSessionId, classSessionId))
       .limit(1);
     if (!assigned || !programmed) throw new Error("Assigned Workout not found");
+    const [completed] = await tx
+      .select({ id: workoutResults.id })
+      .from(workoutResults)
+      .where(eq(workoutResults.assignedWorkoutId, assigned.id))
+      .limit(1);
+    if (completed) throw new Error("A completed Assigned Workout cannot be edited");
 
     const current = assigned.workout.movements[input.movementIndex];
     const currentProvenance = assigned.provenance[input.movementIndex];

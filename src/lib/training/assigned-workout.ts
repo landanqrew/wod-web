@@ -11,6 +11,7 @@ import {
   loadAdjustments,
   programmedWorkouts,
   reservations,
+  workoutResults,
   workouts,
 } from "../db/schema";
 import { rowToAthlete, workoutToRow } from "../db/mappers";
@@ -247,6 +248,14 @@ export async function materialiseAssignedWorkout(
     .limit(1)
     .for("update");
   const id = existing?.id ?? newId("assigned_workout");
+  if (existing) {
+    const [completed] = await tx
+      .select({ id: workoutResults.id })
+      .from(workoutResults)
+      .where(eq(workoutResults.assignedWorkoutId, existing.id))
+      .limit(1);
+    if (completed) return existing.id;
+  }
   const { snapshot: derived, programmedMovements, allowedMovementIds } =
     await deriveAssignedWorkout(tx, input, id);
   if (existing) {

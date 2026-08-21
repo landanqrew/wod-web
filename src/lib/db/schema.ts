@@ -372,7 +372,9 @@ export const workoutResults = pgTable(
   },
   (t) => [
     index("workout_results_athlete_performed_idx").on(t.athleteId, t.performedAt),
-    index("workout_results_assigned_idx").on(t.assignedWorkoutId),
+    uniqueIndex("workout_results_assigned_idx")
+      .on(t.assignedWorkoutId)
+      .where(sql`${t.assignedWorkoutId} IS NOT NULL`),
     index("workout_results_source_session_idx").on(t.sourceWorkoutId, t.classSessionId),
   ]
 );

@@ -30,6 +30,8 @@ import { ScoreType, WorkoutFormat, type MovementPrescription, type Workout } fro
 import { changeProgrammedWorkoutFormat, createManualProgrammedWorkout } from "@/lib/domain/programming/manual-workout";
 import type { WeeklyClassTime } from "@/lib/domain/scheduling/expand-class-schedule";
 import { formatLabel, formatScore, prescriptionLine } from "@/lib/format";
+import type { MuscleLoadAdvice } from "@/lib/domain/tracking/fatigue-tracker";
+import { LogResultPane } from "@/components/log-result-pane";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -82,6 +84,7 @@ export function ClassesClient({
   upcomingSessions,
   programmedWorkoutsBySession,
   assignedWorkoutsBySession,
+  fatigueAdviceBySession,
   classesByGym,
   coachesByGym,
   movementOptionsBySession,
@@ -92,6 +95,7 @@ export function ClassesClient({
   upcomingSessions: ClassSessionSummary[];
   programmedWorkoutsBySession: Record<string, Workout | undefined>;
   assignedWorkoutsBySession: Record<string, AssignedWorkout | null>;
+  fatigueAdviceBySession: Record<string, MuscleLoadAdvice[]>;
   classesByGym: Record<string, GymClass[]>;
   coachesByGym: Record<string, GymMember[]>;
   movementOptionsBySession: Record<string, Array<{ id: string; name: string; loadType: string; available: boolean }>>;
@@ -107,6 +111,7 @@ export function ClassesClient({
   const [sourceSelection, setSourceSelection] = React.useState("");
   const [overrideDraft, setOverrideDraft] = React.useState<OverrideDraft | null>(null);
   const [promotionPrompt, setPromotionPrompt] = React.useState<PromotionPrompt | null>(null);
+  const [loggingSessionId, setLoggingSessionId] = React.useState<string | null>(null);
   const [rosterSessionId, setRosterSessionId] = React.useState<string | null>(null);
   const [roster, setRoster] = React.useState<ClassSessionRoster | null>(null);
   const [pending, startTransition] = React.useTransition();
@@ -509,7 +514,13 @@ export function ClassesClient({
 
   const selectedClasses = selectedGym ? (classesByGym[selectedGym.id] ?? []) : [];
   const selectedSessions = selectedGym ? upcomingSessions.filter(({ gymId }) => gymId === selectedGym.id) : [];
-  const selectedDates = [...new Set(selectedSessions.map(({ localDate }) => localDate))];
+  const selectedDates = [
+    ...new Set(
+      selectedSessions
+        .filter(({ startsAt }) => !sessionHasStarted(startsAt))
+        .map(({ localDate }) => localDate),
+    ),
+  ];
   const effectiveProgrammingDate = selectedDates.includes(programmingDate) ? programmingDate : (selectedDates[0] ?? "");
   const canProgram =
     selectedGym?.membershipRole === MembershipRole.Owner || selectedGym?.membershipRole === MembershipRole.Coach;
@@ -941,13 +952,15 @@ export function ClassesClient({
                         className="flex items-center justify-between gap-2 text-xs"
                       >
                         <span className="text-subtle">{prescriptionLine(prescription)}</span>
-                        <Button
-                          size="sm"
-                          disabled={pending}
-                          onClick={() => beginOverride(session.id, movementIndex, prescription)}
-                        >
-                          Edit
-                        </Button>
+                        {!session.resultLogged ? (
+                          <Button
+                            size="sm"
+                            disabled={pending}
+                            onClick={() => beginOverride(session.id, movementIndex, prescription)}
+                          >
+                            Edit
+                          </Button>
+                        ) : null}
                       </div>
                     ))}
                   </div>
@@ -962,6 +975,29 @@ export function ClassesClient({
                   ) : (
                     <p className="mt-2 text-xs text-subtle">Matches the programmed version after Rx resolution.</p>
                   )}
+                  {(fatigueAdviceBySession[session.id]?.length ?? 0) > 0 ? (
+                    <div className="mt-2 rounded-lg border border-warn/30 bg-warn/8 p-2 text-xs text-warn">
+                      <p className="font-semibold">Fatigue advisory only</p>
+                      {fatigueAdviceBySession[session.id].slice(0, 4).map((advice) => (
+                        <p key={advice.muscle}>
+                          This loads {formatLabel(advice.muscle)}; trained {advice.trainedDays} of the last {advice.windowDays} days.
+                        </p>
+                      ))}
+                    </div>
+                  ) : null}
+                  {sessionHasStarted(session.startsAt) && !session.resultLogged ? (
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      disabled={pending}
+                      onClick={() => setLoggingSessionId(session.id)}
+                      className="mt-3"
+                    >
+                      Log result
+                    </Button>
+                  ) : session.resultLogged ? (
+                    <p className="mt-2 text-xs text-subtle">Result logged</p>
+                  ) : null}
                 </div>
               ) : null}
               {overrideDraft?.sessionId === session.id ? (
@@ -1113,24 +1149,26 @@ export function ClassesClient({
                   )}
                 </div>
               ) : null}
-              <Button
-                size="sm"
-                variant={session.reserved ? "danger" : "primary"}
-                disabled={pending || (!session.reserved && session.reservationCount >= session.capacity)}
-                onClick={() => toggleReservation(session)}
-              >
-                {session.reserved
-                  ? "Cancel Reservation"
-                  : session.reservationCount >= session.capacity
-                    ? "Class full"
-                    : "Reserve spot"}
-              </Button>
-              {selectedGym?.membershipRole === MembershipRole.Owner ? (
+              {!sessionHasStarted(session.startsAt) ? (
+                <Button
+                  size="sm"
+                  variant={session.reserved ? "danger" : "primary"}
+                  disabled={pending || (!session.reserved && session.reservationCount >= session.capacity)}
+                  onClick={() => toggleReservation(session)}
+                >
+                  {session.reserved
+                    ? "Cancel Reservation"
+                    : session.reservationCount >= session.capacity
+                      ? "Class full"
+                      : "Reserve spot"}
+                </Button>
+              ) : null}
+              {!sessionHasStarted(session.startsAt) && selectedGym?.membershipRole === MembershipRole.Owner ? (
                 <Button size="sm" variant="danger" disabled={pending} onClick={() => cancelSession(session.id)}>
                   Cancel Session
                 </Button>
               ) : null}
-              {canProgram && programmedWorkoutsBySession[session.id] ? (
+              {!sessionHasStarted(session.startsAt) && canProgram && programmedWorkoutsBySession[session.id] ? (
                 <Button size="sm" disabled={pending} onClick={() => beginProgrammedWorkoutEdit(session)}>
                   Edit this Session workout
                 </Button>
@@ -1144,6 +1182,18 @@ export function ClassesClient({
           ))}
         </div>
       )}
+      {loggingSessionId && assignedWorkoutsBySession[loggingSessionId] ? (
+        <LogResultPane
+          open
+          onClose={() => setLoggingSessionId(null)}
+          workout={assignedWorkoutsBySession[loggingSessionId]!.workout}
+          classSessionId={loggingSessionId}
+        />
+      ) : null}
     </>
   );
+}
+
+function sessionHasStarted(startsAt: Date): boolean {
+  return startsAt <= new Date();
 }

@@ -184,6 +184,12 @@ export const logResultSchema = z.object({
   notes: z.string().max(2000).optional(),
 });
 
+/** Class lineage is resolved server-side from the athlete's Reservation. */
+export const assignedWorkoutResultSchema = logResultSchema.omit({
+  workout: true,
+  workoutId: true,
+});
+
 const localDateSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Use an ISO local date (YYYY-MM-DD)")

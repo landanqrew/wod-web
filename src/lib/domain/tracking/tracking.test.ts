@@ -74,6 +74,30 @@ describe("PRTracker", () => {
     expect(prs[0].previousValue).toBe(300);
   });
 
+  it("compares a Class result by reusable source rather than its unique Assigned Workout", () => {
+    detectAndSave(
+      makeResult({
+        id: "solo",
+        workoutId: "benchmark_fran",
+        scoreType: ScoreType.Time,
+        timeSeconds: 300,
+      })
+    );
+    const prs = detectAndSave(
+      makeResult({
+        id: "class",
+        workoutId: "assigned_unique",
+        assignedWorkoutId: "assigned_unique",
+        sourceWorkoutId: "benchmark_fran",
+        classSessionId: "session_1",
+        scoreType: ScoreType.Time,
+        timeSeconds: 240,
+      })
+    );
+
+    expect(prs).toMatchObject([{ referenceId: "benchmark_fran", previousValue: 300, value: 240 }]);
+  });
+
   it("does not create a PR when result is worse", () => {
     const first = makeResult({
       id: "r1",
@@ -117,9 +141,7 @@ describe("PRTracker", () => {
       workoutId: "strength_1",
       scoreType: ScoreType.Load,
       peakLoad: 405,
-      movementResults: [
-        { movementId: "deadlift", load: 405, reps: 1, rx: true },
-      ],
+      movementResults: [{ movementId: "deadlift", load: 405, reps: 1, rx: true }],
     });
     results.push(result);
 
@@ -134,9 +156,7 @@ describe("PRTracker", () => {
     const r1 = makeResult({
       id: "r1",
       roundsCompleted: 10,
-      movementResults: [
-        { movementId: "back_squat", load: 225, reps: 10, rx: true },
-      ],
+      movementResults: [{ movementId: "back_squat", load: 225, reps: 10, rx: true }],
     });
     results.push(r1);
     detectAndSave(r1);
@@ -179,10 +199,7 @@ describe("VolumeTracker", () => {
       })
     );
 
-    const summary = volumeTracker.summarize(
-      "2026-02-01T00:00:00Z",
-      "2026-02-28T00:00:00Z"
-    );
+    const summary = volumeTracker.summarize("2026-02-01T00:00:00Z", "2026-02-28T00:00:00Z");
 
     expect(summary.totalWorkouts).toBe(2);
     expect(summary.rxWorkouts).toBe(1);
@@ -191,9 +208,7 @@ describe("VolumeTracker", () => {
     // Average RPE: (7+8)/2 = 7.5
     expect(summary.averageRpe).toBe(7.5);
     // Movement breakdown
-    const squat = summary.movementBreakdown.find(
-      (m) => m.movementId === "back_squat"
-    );
+    const squat = summary.movementBreakdown.find((m) => m.movementId === "back_squat");
     expect(squat).toBeDefined();
     expect(squat!.totalSets).toBe(2);
     expect(squat!.totalReps).toBe(20);
@@ -201,10 +216,7 @@ describe("VolumeTracker", () => {
   });
 
   it("returns empty summary when no results in range", () => {
-    const summary = volumeTracker.summarize(
-      "2026-01-01T00:00:00Z",
-      "2026-01-31T00:00:00Z"
-    );
+    const summary = volumeTracker.summarize("2026-01-01T00:00:00Z", "2026-01-31T00:00:00Z");
     expect(summary.totalWorkouts).toBe(0);
     expect(summary.totalVolumeLbs).toBe(0);
     expect(summary.averageRpe).toBeNull();
@@ -229,10 +241,7 @@ describe("VolumeTracker", () => {
       })
     );
 
-    const summary = volumeTracker.summarize(
-      "2026-02-01T00:00:00Z",
-      "2026-02-28T00:00:00Z"
-    );
+    const summary = volumeTracker.summarize("2026-02-01T00:00:00Z", "2026-02-28T00:00:00Z");
 
     expect(summary.dayDistribution[2]).toBe(1); // Tuesday
     expect(summary.dayDistribution[3]).toBe(1); // Wednesday
@@ -252,10 +261,7 @@ describe("VolumeTracker", () => {
       })
     );
 
-    const summary = volumeTracker.summarize(
-      "2026-02-01T00:00:00Z",
-      "2026-02-28T00:00:00Z"
-    );
+    const summary = volumeTracker.summarize("2026-02-01T00:00:00Z", "2026-02-28T00:00:00Z");
 
     expect(summary.movementBreakdown[0].movementId).toBe("pull_up");
     expect(summary.movementBreakdown[1].movementId).toBe("back_squat");
