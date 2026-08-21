@@ -11,7 +11,10 @@ import { getProgrammedWorkoutForSession } from "../data/programmed-workout";
 import { Equipment, EQUIPMENT_PRESETS } from "../domain/models/equipment";
 import { MembershipRole } from "../domain/models/gym";
 import { Muscle } from "../domain/models/body";
-import { getMovementOrThrow } from "../domain/movements/library";
+import {
+  getAllMovements,
+  getMovementOrThrow,
+} from "../domain/movements/library";
 import {
   ScoreType,
   WorkoutFormat,
@@ -455,6 +458,127 @@ describe("Programmed Workouts", () => {
         );
       }),
     ).toBe(true);
+
+    await updateGymForOwner(gymId, ownerAthleteId, {
+      name: "Iron Ridge",
+      recoveryWindowHours: 48,
+      floor: [...EQUIPMENT_PRESETS.fullGym]
+        .filter((equipment) => equipment !== Equipment.None)
+        .map((equipment) => ({
+          equipment,
+          ...(equipment === Equipment.Rower ? { stationCount: 1 } : {}),
+        })),
+    });
+    const stationClassId = await createClassForOwner(
+      gymId,
+      ownerAthleteId,
+      {
+        name: "Station Advisory",
+        coachAthleteId,
+        weeklyTimes: [{ dayOfWeek: 1, localTime: "06:00" }],
+        timeZone: "America/Chicago",
+        capacity: 20,
+      },
+      { startDate: "2027-03-22", endDate: "2027-03-22" },
+    );
+    const [stationSession] = await getClassSessionsForGym(
+      gymId,
+      ownerAthleteId,
+      [stationClassId],
+    );
+    for (const reservingAthleteId of [
+      ownerAthleteId,
+      coachAthleteId,
+      memberAthleteId,
+    ]) {
+      await reserveClassSessionForAthlete(
+        stationSession.id,
+        reservingAthleteId,
+        new Date("2027-03-01T00:00:00Z"),
+      );
+    }
+    const stationWorkout: Workout = {
+      id: newId("wod"),
+      name: "Row and thrusters",
+      format: WorkoutFormat.RoundsForTime,
+      movements: [
+        { movementId: "row", distance: 500 },
+        {
+          movementId: "thruster",
+          reps: 15,
+          rxLoad: { male: 95, female: 65 },
+        },
+      ],
+      rounds: 5,
+      timeCap: 20,
+      scoreType: ScoreType.Time,
+      isBenchmark: false,
+    };
+    const stationResult = await programGymDay(
+      gymId,
+      coachAthleteId,
+      "2027-03-22",
+      stationWorkout,
+    );
+    expect(stationResult.stationWarnings).toEqual([
+      expect.objectContaining({
+        classSessionId: stationSession.id,
+        movementId: "row",
+        movementName: "Row",
+        equipment: Equipment.Rower,
+        reservedHeadcount: 3,
+        availableStations: 1,
+        shortfall: 2,
+      }),
+    ]);
+    await expect(
+      getProgrammedWorkoutForSession(stationSession.id, ownerAthleteId),
+    ).resolves.toMatchObject({ workout: stationWorkout });
+
+    const generatedStationResult = await generateProgrammedWorkoutForGymDay(
+      gymId,
+      coachAthleteId,
+      "2027-03-22",
+      {
+        format: WorkoutFormat.AMRAP,
+        movementCount: 1,
+        excludeMovements: getAllMovements()
+          .filter(({ id }) => id !== "row")
+          .map(({ id }) => id),
+      },
+    );
+    expect(generatedStationResult.stationWarnings).toEqual([
+      expect.objectContaining({
+        classSessionId: stationSession.id,
+        movementId: "row",
+        reservedHeadcount: 3,
+        availableStations: 1,
+        shortfall: 2,
+      }),
+    ]);
+    await expect(
+      getProgrammedWorkoutForSession(stationSession.id, ownerAthleteId),
+    ).resolves.toMatchObject({
+      workout: { movements: [expect.objectContaining({ movementId: "row" })] },
+    });
+
+    await updateGymForOwner(gymId, ownerAthleteId, {
+      name: "Iron Ridge",
+      recoveryWindowHours: 48,
+      floor: [...EQUIPMENT_PRESETS.fullGym]
+        .filter((equipment) => equipment !== Equipment.None)
+        .map((equipment) => ({
+          equipment,
+          ...(equipment === Equipment.Rower ? { stationCount: 3 } : {}),
+        })),
+    });
+    await expect(
+      updateProgrammedWorkoutForSession(
+        stationSession.id,
+        coachAthleteId,
+        stationWorkout,
+      ),
+    ).resolves.toMatchObject({ stationWarnings: [] });
 
     let releaseRevocation: (() => void) | undefined;
     const revocationCanCommit = new Promise<void>((resolve) => {
