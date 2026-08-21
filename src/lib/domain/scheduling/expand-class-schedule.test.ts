@@ -1,7 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { expandClassSchedule } from "./expand-class-schedule";
+import {
+  expandClassSchedule,
+  localDateInTimeZone,
+} from "./expand-class-schedule";
 
 describe("Class schedule expansion", () => {
+  it("derives today from the explicit local time zone instead of UTC", () => {
+    const eveningInChicago = new Date("2026-08-18T00:52:00.000Z");
+    expect(localDateInTimeZone(eveningInChicago, "America/Chicago")).toBe(
+      "2026-08-17",
+    );
+  });
+
   it("keeps a Class at its local time across daylight-saving changes", () => {
     const sessions = expandClassSchedule(
       [{ dayOfWeek: 0, localTime: "06:00" }],

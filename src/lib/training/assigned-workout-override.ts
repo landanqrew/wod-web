@@ -25,6 +25,7 @@ import { createMovementPrescription } from "../domain/prescription";
 import { checkMovement, mergeConstraints } from "../domain/scaling/constraint-engine";
 import { assignedWorkoutOverrideSchema } from "../validation";
 import { resolveProgrammedMovements } from "./assigned-workout";
+import { loadAdjustmentOffer } from "./load-adjustment";
 
 type OverrideInput = z.infer<typeof assignedWorkoutOverrideSchema>;
 
@@ -102,7 +103,7 @@ export async function overrideAssignedWorkoutForAthlete(
   raw: unknown,
 ) {
   const input: OverrideInput = assignedWorkoutOverrideSchema.parse(raw);
-  await db.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
     const [session] = await tx
       .select({
         id: classSessions.id,
@@ -212,6 +213,9 @@ export async function overrideAssignedWorkoutForAthlete(
       }
       Object.assign(prescription, { [field]: value });
       provenance[field] = "overridden";
+      if (field === "load" && current.load !== undefined) {
+        provenance.loadOverridePreviousValue = current.load;
+      }
     }
 
     const programmedMovements = resolveProgrammedMovements(
@@ -256,5 +260,10 @@ export async function overrideAssignedWorkoutForAthlete(
         updatedAt: new Date(),
       })
       .where(eq(assignedWorkouts.id, assigned.id));
+    return input.load === undefined ||
+      current.load === undefined ||
+      input.load >= current.load
+      ? null
+      : loadAdjustmentOffer(targetMovementId, input.load, athlete.sex);
   });
 }

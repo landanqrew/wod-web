@@ -1,0 +1,2 @@
+ALTER TABLE "load_adjustments" ADD COLUMN "review_after_sessions" integer DEFAULT 5 NOT NULL;--> statement-breakpoint
+ALTER TABLE "load_adjustments" ADD CONSTRAINT "load_adjustments_review_sessions_check" CHECK ("load_adjustments"."review_after_sessions" > 0);

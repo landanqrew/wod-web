@@ -39,6 +39,7 @@ describe("Assigned Workout reconciliation", () => {
           movementId: "programmed",
           reps: "programmed",
           load: "overridden",
+          loadOverridePreviousValue: 225,
         },
       ],
       [
@@ -68,6 +69,7 @@ describe("Assigned Workout reconciliation", () => {
       load: 200,
     });
     expect(result.snapshot.provenance[0].load).toBe("overridden");
+    expect(result.snapshot.provenance[0].loadOverridePreviousValue).toBe(225);
     expect(result.notices).toEqual([]);
     expect(result.snapshot.changes[0].explanations).toEqual([
       "Athlete override: load set to 200 lb",

@@ -16,6 +16,7 @@ import {
 import { generateWorkout } from "@/lib/domain/generator/workout-generator";
 import { getMovement } from "@/lib/domain/movements/library";
 import { WorkoutFormat } from "@/lib/domain/models/workout";
+import { impedimentInputSchema } from "@/lib/validation";
 
 const createdUsers: string[] = [];
 
@@ -32,6 +33,29 @@ async function newUser(): Promise<string> {
 }
 
 describe("onboarding", () => {
+  it("rejects malformed and inverted Impediment dates", () => {
+    const base = {
+      category: ImpedimentCategory.AcuteInjury,
+      severity: ImpedimentSeverity.Moderate,
+      affectedMuscles: [Muscle.Shoulders],
+      affectedJoints: [],
+      description: "",
+    };
+    expect(() =>
+      impedimentInputSchema.parse({
+        ...base,
+        startDate: "2026-02-30",
+      }),
+    ).toThrow("valid local date");
+    expect(() =>
+      impedimentInputSchema.parse({
+        ...base,
+        startDate: "2026-08-21",
+        endDate: "2026-08-20",
+      }),
+    ).toThrow("End date cannot be before start date");
+  });
+
   it("stores impediments and re-derives their constraints on read", async () => {
     const userId = await newUser();
 

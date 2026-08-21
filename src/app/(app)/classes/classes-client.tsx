@@ -27,6 +27,7 @@ import {
   updateSessionProgrammedWorkoutAction,
 } from "@/lib/actions/programmed-workout";
 import { overrideAssignedWorkoutAction } from "@/lib/actions/assigned-workout";
+import { promoteLoadAdjustmentAction } from "@/lib/actions/load-adjustment";
 import { MembershipRole, type Gym, type GymMember } from "@/lib/domain/models/gym";
 import type { AssignedWorkout } from "@/lib/domain/models/assigned-workout";
 import type { ClassSessionSummary, GymClass } from "@/lib/domain/models/gym-class";
@@ -85,6 +86,13 @@ type OverrideDraft = {
   };
 };
 
+type PromotionPrompt = {
+  sessionId: string;
+  movementIndex: number;
+  movementName: string;
+  percent: number;
+};
+
 export function ClassesClient({
   gyms,
   upcomingSessions,
@@ -117,6 +125,8 @@ export function ClassesClient({
   const [overrideDraft, setOverrideDraft] = React.useState<OverrideDraft | null>(
     null,
   );
+  const [promotionPrompt, setPromotionPrompt] =
+    React.useState<PromotionPrompt | null>(null);
   const [pending, startTransition] = React.useTransition();
   const selectedGym = gyms.find(({ id }) => id === selectedGymId) ?? gyms[0];
 
@@ -326,7 +336,7 @@ export function ClassesClient({
           overrideDraft[field] === overrideDraft.initial[field]
             ? undefined
             : Number(overrideDraft[field]);
-        await overrideAssignedWorkoutAction(overrideDraft.sessionId, {
+        const result = await overrideAssignedWorkoutAction(overrideDraft.sessionId, {
           movementIndex: overrideDraft.movementIndex,
           movementId:
             overrideDraft.movementId === overrideDraft.initial.movementId
@@ -336,11 +346,47 @@ export function ClassesClient({
           load: changedNumber("load"),
           duration: changedNumber("duration"),
         });
+        if (result.loadAdjustmentOffer) {
+          setPromotionPrompt({
+            sessionId: overrideDraft.sessionId,
+            movementIndex: overrideDraft.movementIndex,
+            movementName: result.loadAdjustmentOffer.movementName,
+            percent: result.loadAdjustmentOffer.percent,
+          });
+        } else setPromotionPrompt(null);
         toast.success("Assigned Workout updated");
         setOverrideDraft(null);
         router.refresh();
       } catch {
         toast.error("Could not apply that override. Check the Movement and Gym floor.");
+      }
+    });
+  }
+
+  function answerPromotion(reason: "capability" | "injury") {
+    if (!promotionPrompt) return;
+    startTransition(async () => {
+      try {
+        const result = await promoteLoadAdjustmentAction({
+          classSessionId: promotionPrompt.sessionId,
+          movementIndex: promotionPrompt.movementIndex,
+          reason,
+          reviewAfterSessions: 5,
+        });
+        if (result.status === "impediment_required") {
+          toast.info(
+            "Record a dated Impediment so the injury restriction can expire.",
+          );
+          setPromotionPrompt(null);
+          router.push("/adjustments?newImpediment=1");
+          return;
+        } else {
+          toast.success("Load Adjustment will apply to future programmed loads");
+        }
+        setPromotionPrompt(null);
+        router.refresh();
+      } catch {
+        toast.error("Could not create that Load Adjustment.");
       }
     });
   }
@@ -851,6 +897,40 @@ export function ClassesClient({
                     </Button>
                     <Button disabled={pending} onClick={() => setOverrideDraft(null)}>
                       Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+              {promotionPrompt?.sessionId === session.id ? (
+                <div className="rounded-xl border border-primary/30 bg-primary/10 p-3 text-sm">
+                  <p className="font-semibold">
+                    Keep {promotionPrompt.movementName} at {promotionPrompt.percent}% for future workouts?
+                  </p>
+                  <p className="mt-1 text-xs text-subtle">
+                    The ratio follows each Coach-programmed load and never changes reps.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      disabled={pending}
+                      onClick={() => answerPromotion("capability")}
+                    >
+                      Keep for future
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={pending}
+                      onClick={() => answerPromotion("injury")}
+                    >
+                      This is pain or injury
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={pending}
+                      onClick={() => setPromotionPrompt(null)}
+                    >
+                      Just today
                     </Button>
                   </div>
                 </div>

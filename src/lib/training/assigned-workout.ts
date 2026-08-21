@@ -19,6 +19,7 @@ import type { AssignedMovementProvenance } from "../domain/models/assigned-worko
 import type { MovementPrescription, Workout } from "../domain/models/workout";
 import { getAllMovements } from "../domain/movements/library";
 import {
+  applyLoadAdjustment,
   personaliseWorkout,
   reconcileAssignedWorkout,
   type ReconciliationSnapshot,
@@ -145,6 +146,10 @@ export async function deriveAssignedWorkout(
       .map(({ id }) => id),
   );
   const personalised = personaliseWorkout(input.programmedWorkout, context);
+  const programmedMovements = resolveProgrammedMovements(
+    input.programmedWorkout,
+    context.sex,
+  );
   const changes = personalised.changes.map((change) => ({
     ...change,
     explanations: [...change.explanations],
@@ -163,10 +168,14 @@ export async function deriveAssignedWorkout(
         return prescription;
       }
       const ratio = Number(adjustment.ratio);
-      if (!(ratio > 0 && ratio <= 1)) {
-        throw new Error("Load Adjustment ratio must be greater than 0 and at most 1");
-      }
-      const next = { ...prescription, load: Math.round(prescription.load * ratio) };
+      const adjustedProgrammed = applyLoadAdjustment(
+        programmedMovements[movementIndex] ?? prescription,
+        { movementId: originalMovementId, ratio },
+      );
+      const next = {
+        ...prescription,
+        load: Math.min(prescription.load, adjustedProgrammed.load!),
+      };
       const existingChange = changes.find(
         (change) => change.movementIndex === movementIndex,
       );
@@ -190,10 +199,7 @@ export async function deriveAssignedWorkout(
       provenance: provenanceFor(input.programmedWorkout, workout, changes),
       changes,
     },
-    programmedMovements: resolveProgrammedMovements(
-      input.programmedWorkout,
-      context.sex,
-    ),
+    programmedMovements,
     allowedMovementIds,
   };
 }

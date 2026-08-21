@@ -9,10 +9,11 @@ export async function overrideAssignedWorkoutAction(
   override: unknown,
 ) {
   const athlete = await requireAthlete();
-  await overrideAssignedWorkoutForAthlete(
+  const loadAdjustmentOffer = await overrideAssignedWorkoutForAthlete(
     classSessionId,
     athlete.id,
     override,
   );
   revalidatePath("/classes");
+  return { loadAdjustmentOffer };
 }

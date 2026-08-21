@@ -40,6 +40,13 @@ export const assignedWorkoutOverrideSchema = z
     { message: "At least one override is required" },
   );
 
+export const promoteLoadAdjustmentSchema = z.object({
+  classSessionId: z.string().min(1),
+  movementIndex: z.number().int().nonnegative().max(19),
+  reason: z.enum(["capability", "injury"]),
+  reviewAfterSessions: z.number().int().min(1).max(20).default(5),
+});
+
 export const workoutSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1).max(120),
@@ -177,17 +184,38 @@ export const logResultSchema = z.object({
   notes: z.string().max(2000).optional(),
 });
 
-export const impedimentInputSchema = z.object({
-  category: enumOf(ImpedimentCategory),
-  severity: enumOf(ImpedimentSeverity),
-  affectedMuscles: z.array(enumOf(Muscle)).max(24),
-  affectedJoints: z.array(enumOf(Joint)).max(24),
-  description: z.string().max(400).default(""),
-  startDate: z.string().min(4),
-  endDate: z.string().min(4).optional(),
-  trimester: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
-  weeksPostpartum: z.number().int().min(0).max(200).optional(),
-});
+const localDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Use an ISO local date (YYYY-MM-DD)")
+  .refine((value) => {
+    const parsed = new Date(`${value}T00:00:00Z`);
+    return (
+      !Number.isNaN(parsed.getTime()) &&
+      parsed.toISOString().slice(0, 10) === value
+    );
+  }, "Use a valid local date");
+
+export const impedimentInputSchema = z
+  .object({
+    category: enumOf(ImpedimentCategory),
+    severity: enumOf(ImpedimentSeverity),
+    affectedMuscles: z.array(enumOf(Muscle)).max(24),
+    affectedJoints: z.array(enumOf(Joint)).max(24),
+    description: z.string().max(400).default(""),
+    startDate: localDateSchema,
+    endDate: localDateSchema.optional(),
+    trimester: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
+    weeksPostpartum: z.number().int().min(0).max(200).optional(),
+  })
+  .superRefine(({ startDate, endDate }, context) => {
+    if (endDate !== undefined && endDate < startDate) {
+      context.addIssue({
+        code: "custom",
+        path: ["endDate"],
+        message: "End date cannot be before start date",
+      });
+    }
+  });
 
 export const onboardingSchema = z.object({
   name: z.string().min(1).max(80),
