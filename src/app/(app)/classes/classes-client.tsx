@@ -832,7 +832,7 @@ export function ClassesClient({
               </p>
               {results.length > 0 ? (
                 <p className="mt-1 text-xs text-subtle">
-                  Result trend: {results.map((result) => formatScore(result)).join(" → ")}
+                  Result trend: {[...results].reverse().map((result) => formatScore(result)).join(" → ")}
                 </p>
               ) : null}
             </div>
