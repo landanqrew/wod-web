@@ -5,9 +5,13 @@ import { Equipment } from "@/lib/domain/models/equipment";
 import { Joint, Modality, MovementPattern, Muscle } from "@/lib/domain/models/body";
 import { DifficultyTier } from "@/lib/domain/models/movement";
 import { MembershipRole } from "@/lib/domain/models/gym";
-import { ImpedimentCategory, ImpedimentSeverity } from "@/lib/domain/models/impediment";
+import {
+  ImpedimentCategory,
+  ImpedimentSeverity,
+} from "@/lib/domain/models/impediment";
 
-const enumOf = <T extends Record<string, string>>(e: T) => z.enum(Object.values(e) as [string, ...string[]]);
+const enumOf = <T extends Record<string, string>>(e: T) =>
+  z.enum(Object.values(e) as [string, ...string[]]);
 
 export const prescriptionSchema = z.object({
   movementId: z.string().min(1),
@@ -29,8 +33,11 @@ export const assignedWorkoutOverrideSchema = z
   })
   .refine(
     ({ movementId, reps, load, duration }) =>
-      movementId !== undefined || reps !== undefined || load !== undefined || duration !== undefined,
-    { message: "At least one override is required" }
+      movementId !== undefined ||
+      reps !== undefined ||
+      load !== undefined ||
+      duration !== undefined,
+    { message: "At least one override is required" },
   );
 
 export const promoteLoadAdjustmentSchema = z.object({
@@ -85,7 +92,9 @@ export const programmedWorkoutSchema = workoutSchema
     movements: z.array(programmedPrescriptionSchema).min(1).max(20),
   })
   .superRefine((workout, context) => {
-    const required: Partial<Record<WorkoutFormat, Array<keyof typeof workout>>> = {
+    const required: Partial<
+      Record<WorkoutFormat, Array<keyof typeof workout>>
+    > = {
       [WorkoutFormat.AMRAP]: ["timeCap"],
       [WorkoutFormat.EMOM]: ["emomMinutes"],
       [WorkoutFormat.RoundsForTime]: ["rounds"],
@@ -102,8 +111,16 @@ export const programmedWorkoutSchema = workoutSchema
       }
     }
 
-    const allowed = new Set(programmedFormatFields[workout.format as WorkoutFormat] ?? []);
-    for (const field of ["timeCap", "rounds", "workInterval", "restInterval", "emomMinutes"] as const) {
+    const allowed = new Set(
+      programmedFormatFields[workout.format as WorkoutFormat] ?? [],
+    );
+    for (const field of [
+      "timeCap",
+      "rounds",
+      "workInterval",
+      "restInterval",
+      "emomMinutes",
+    ] as const) {
       if (!allowed.has(field) && workout[field] !== undefined) {
         context.addIssue({
           code: "custom",
@@ -126,7 +143,9 @@ export const generateOptionsSchema = z
     excludeMovements: z.array(z.string()).optional(),
   })
   .superRefine((options, context) => {
-    const allowed = new Set(programmedFormatFields[options.format as WorkoutFormat] ?? []);
+    const allowed = new Set(
+      programmedFormatFields[options.format as WorkoutFormat] ?? [],
+    );
     for (const field of ["timeCap", "rounds", "emomMinutes"] as const) {
       if (!allowed.has(field) && options[field] !== undefined) {
         context.addIssue({
@@ -176,7 +195,10 @@ const localDateSchema = z
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Use an ISO local date (YYYY-MM-DD)")
   .refine((value) => {
     const parsed = new Date(`${value}T00:00:00Z`);
-    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+    return (
+      !Number.isNaN(parsed.getTime()) &&
+      parsed.toISOString().slice(0, 10) === value
+    );
   }, "Use a valid local date");
 
 export const impedimentInputSchema = z
@@ -211,7 +233,10 @@ export const onboardingSchema = z.object({
 });
 
 export const gymFloorEntrySchema = z.object({
-  equipment: enumOf(Equipment).refine((equipment) => equipment !== Equipment.None, "Bodyweight is not floor equipment"),
+  equipment: enumOf(Equipment).refine(
+    (equipment) => equipment !== Equipment.None,
+    "Bodyweight is not floor equipment",
+  ),
   stationCount: z.number().int().positive().max(10_000).optional(),
 });
 
@@ -222,8 +247,10 @@ export const gymInputSchema = z.object({
     .array(gymFloorEntrySchema)
     .max(Object.values(Equipment).length)
     .refine(
-      (entries) => new Set(entries.map(({ equipment }) => equipment)).size === entries.length,
-      "Each equipment type can appear only once"
+      (entries) =>
+        new Set(entries.map(({ equipment }) => equipment)).size ===
+        entries.length,
+      "Each equipment type can appear only once",
     ),
 });
 
@@ -246,7 +273,7 @@ export const gymClassInputSchema = z.object({
     .max(7)
     .refine(
       (times) => new Set(times.map(({ dayOfWeek }) => dayOfWeek)).size === times.length,
-      "A Class can meet only once per weekday"
+      "A Class can meet only once per weekday",
     ),
   timeZone: z.string().refine((timeZone) => {
     try {

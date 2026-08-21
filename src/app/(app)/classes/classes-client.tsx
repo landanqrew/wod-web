@@ -17,7 +17,10 @@ import {
 import { overrideAssignedWorkoutAction } from "@/lib/actions/assigned-workout";
 import { promoteLoadAdjustmentAction } from "@/lib/actions/load-adjustment";
 import { getClassSessionRosterAction } from "@/lib/actions/roster";
-import { saveGymLibraryWorkoutAction, updateGymLibraryWorkoutAction } from "@/lib/actions/gym-library";
+import {
+  saveGymLibraryWorkoutAction,
+  updateGymLibraryWorkoutAction,
+} from "@/lib/actions/gym-library";
 import { MembershipRole, type Gym, type GymMember } from "@/lib/domain/models/gym";
 import type { AssignedWorkout } from "@/lib/domain/models/assigned-workout";
 import type { ClassSessionSummary, GymClass } from "@/lib/domain/models/gym-class";
@@ -198,14 +201,14 @@ export function ClassesClient({
           let discardAssignedWorkout = false;
           if (assignedWorkoutsBySession[session.id]) {
             discardAssignedWorkout = window.confirm(
-              "Cancelling removes your Assigned Workout and any personal edits. Continue?"
+              "Cancelling removes your Assigned Workout and any personal edits. Continue?",
             );
             if (!discardAssignedWorkout) return;
           }
           let result = await cancelReservationAction(session.id, discardAssignedWorkout);
           if (!result.cancelled) {
             discardAssignedWorkout = window.confirm(
-              "A new Assigned Workout is now attached. Cancelling removes it and any personal edits. Continue?"
+              "A new Assigned Workout is now attached. Cancelling removes it and any personal edits. Continue?",
             );
             if (!discardAssignedWorkout) return;
             result = await cancelReservationAction(session.id, true);
@@ -282,7 +285,7 @@ export function ClassesClient({
       movementsJson: JSON.stringify(
         workout.movements.map(({ movement: _movement, ...prescription }) => prescription),
         null,
-        2
+        2,
       ),
     });
   }
@@ -300,17 +303,17 @@ export function ClassesClient({
                 programmingDraft.gymId,
                 programmingDraft.localDate,
                 programmingDraft.sourceWorkoutId,
-                workout
+                workout,
               )
           : await programGymDayAction(programmingDraft.gymId, programmingDraft.localDate, workout);
         toast.success(
-          programmingDraft.sessionId ? "Class Session workout updated" : "Workout programmed for the gym-day"
+          programmingDraft.sessionId ? "Class Session workout updated" : "Workout programmed for the gym-day",
         );
         if (result.warningMuscles.length > 0) {
           toast.warning(
             `Strength recovery warning: ${result.warningMuscles
               .map(formatLabel)
-              .join(", ")} were loaded inside this Gym's recovery window.`
+              .join(", ")} were loaded inside this Gym's recovery window.`,
           );
         }
         showStationWarnings(result.stationWarnings);
@@ -332,12 +335,18 @@ export function ClassesClient({
           movements,
         };
         if (programmingDraft.libraryWorkoutId) {
-          await updateGymLibraryWorkoutAction(programmingDraft.gymId, programmingDraft.libraryWorkoutId, workout);
+          await updateGymLibraryWorkoutAction(
+            programmingDraft.gymId,
+            programmingDraft.libraryWorkoutId,
+            workout,
+          );
         } else {
           await saveGymLibraryWorkoutAction(programmingDraft.gymId, workout);
         }
         toast.success(
-          programmingDraft.libraryWorkoutId ? "Gym Library Workout updated" : "Workout saved to the Gym Library"
+          programmingDraft.libraryWorkoutId
+            ? "Gym Library Workout updated"
+            : "Workout saved to the Gym Library",
         );
         setProgrammingDraft(null);
         refreshClasses();
@@ -383,7 +392,7 @@ export function ClassesClient({
       reservedHeadcount: number;
       availableStations: number;
       shortfall: number;
-    }>
+    }>,
   ) {
     for (const warning of warnings) {
       const session = upcomingSessions.find(({ id }) => id === warning.classSessionId);
@@ -399,10 +408,10 @@ export function ClassesClient({
         : undefined;
       toast.warning(
         `${warning.movementName}${sessionLabel ? ` · ${sessionLabel}` : ""}: short ${warning.shortfall} ${formatLabel(
-          warning.equipment
+          warning.equipment,
         )} Station${warning.shortfall === 1 ? "" : "s"} for ${
           warning.reservedHeadcount
-        } reservations (${warning.availableStations} available). Plan heats or rotations.`
+        } reservations (${warning.availableStations} available). Plan heats or rotations.`,
       );
     }
   }
@@ -484,7 +493,7 @@ export function ClassesClient({
   function supportsOverrideField(field: "reps" | "load" | "duration") {
     if (!overrideDraft) return false;
     const loadType = movementOptionsBySession[overrideDraft.sessionId]?.find(
-      ({ id }) => id === overrideDraft.movementId
+      ({ id }) => id === overrideDraft.movementId,
     )?.loadType;
     if (field === "reps") {
       return loadType === "weighted" || loadType === "bodyweight";
@@ -507,7 +516,9 @@ export function ClassesClient({
   const selectedSessions = selectedGym ? upcomingSessions.filter(({ gymId }) => gymId === selectedGym.id) : [];
   const selectedDates = [
     ...new Set(
-      selectedSessions.filter(({ startsAt }) => new Date(startsAt) > new Date()).map(({ localDate }) => localDate)
+      selectedSessions
+        .filter(({ startsAt }) => !sessionHasStarted(startsAt))
+        .map(({ localDate }) => localDate),
     ),
   ];
   const effectiveProgrammingDate = selectedDates.includes(programmingDate) ? programmingDate : (selectedDates[0] ?? "");
@@ -622,7 +633,7 @@ export function ClassesClient({
                       setDraft({
                         ...draft,
                         weeklyTimes: draft.weeklyTimes.map((time) =>
-                          time.dayOfWeek === weeklyTime.dayOfWeek ? { ...time, localTime: event.target.value } : time
+                          time.dayOfWeek === weeklyTime.dayOfWeek ? { ...time, localTime: event.target.value } : time,
                         ),
                       })
                     }
@@ -665,14 +676,10 @@ export function ClassesClient({
                 {(libraryWorkoutsByGym[selectedGym.id] ?? [])
                   .filter(({ sourceKind }) => sourceKind === "gym")
                   .map(({ workout }) => (
-                    <option key={workout.id} value={workout.id}>
-                      Gym · {workout.name}
-                    </option>
+                  <option key={workout.id} value={workout.id}>Gym · {workout.name}</option>
                   ))}
                 {globalBenchmarks.map((workout) => (
-                  <option key={workout.id} value={workout.id}>
-                    Global · {workout.name}
-                  </option>
+                  <option key={workout.id} value={workout.id}>Global · {workout.name}</option>
                 ))}
               </Select>
             </FieldRow>
@@ -728,7 +735,7 @@ export function ClassesClient({
                     ...programmingDraft,
                     workout: changeProgrammedWorkoutFormat(
                       programmingDraft.workout,
-                      event.target.value as WorkoutFormat
+                      event.target.value as WorkoutFormat,
                     ),
                   })
                 }
@@ -853,24 +860,16 @@ export function ClassesClient({
               <h2 className="text-lg font-bold">Workout sources</h2>
               <p className="text-xs text-subtle">Gym-owned templates remain separate from shared global benchmarks.</p>
             </div>
-            <Button size="sm" disabled={pending} onClick={beginLibraryCreate}>
-              Create Gym Workout
-            </Button>
+            <Button size="sm" disabled={pending} onClick={beginLibraryCreate}>Create Gym Workout</Button>
           </div>
-          {(libraryWorkoutsByGym[selectedGym.id] ?? []).map(
-            ({ sourceKind, workout, lastRunAt, programmedRunCount, results }) => (
+          {(libraryWorkoutsByGym[selectedGym.id] ?? []).map(({ sourceKind, workout, lastRunAt, programmedRunCount, results }) => (
             <div key={workout.id} className="rounded-xl border border-border p-3">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-sm font-semibold">
-                    {workout.name}{" "}
-                    <span className="text-xs font-normal text-subtle">
-                      · {sourceKind === "gym" ? "Gym Library" : "Global benchmark"}
-                    </span>
+                  {workout.name} <span className="text-xs font-normal text-subtle">· {sourceKind === "gym" ? "Gym Library" : "Global benchmark"}</span>
                 </p>
                 {sourceKind === "gym" ? (
-                    <Button size="sm" disabled={pending} onClick={() => beginLibraryEdit(workout)}>
-                      Edit
-                    </Button>
+                  <Button size="sm" disabled={pending} onClick={() => beginLibraryEdit(workout)}>Edit</Button>
                 ) : null}
               </div>
               <p className="text-xs text-subtle">
@@ -879,16 +878,11 @@ export function ClassesClient({
               </p>
               {results.length > 0 ? (
                 <p className="mt-1 text-xs text-subtle">
-                    Result trend:{" "}
-                    {[...results]
-                      .reverse()
-                      .map((result) => formatScore(result))
-                      .join(" → ")}
+                  Result trend: {[...results].reverse().map((result) => formatScore(result)).join(" → ")}
                 </p>
               ) : null}
             </div>
-            )
-          )}
+          ))}
         </Card>
       ) : null}
 
@@ -920,9 +914,7 @@ export function ClassesClient({
         </Card>
       ) : (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {selectedSessions.map((session) => {
-            const sessionStarted = new Date(session.startsAt) <= new Date();
-            return (
+          {selectedSessions.map((session) => (
             <Card key={session.id} className="flex flex-col gap-3 p-5">
               <div>
                 <h2 className="font-bold">{session.className}</h2>
@@ -983,30 +975,29 @@ export function ClassesClient({
                   ) : (
                     <p className="mt-2 text-xs text-subtle">Matches the programmed version after Rx resolution.</p>
                   )}
-                    {(fatigueAdviceBySession[session.id]?.length ?? 0) > 0 ? (
-                      <div className="mt-2 rounded-lg border border-warn/30 bg-warn/8 p-2 text-xs text-warn">
-                        <p className="font-semibold">Fatigue advisory only</p>
-                        {fatigueAdviceBySession[session.id].slice(0, 4).map((advice) => (
-                          <p key={advice.muscle}>
-                            This loads {formatLabel(advice.muscle)}; trained {advice.trainedDays} of the last{" "}
-                            {advice.windowDays} days.
-                          </p>
-                        ))}
-                      </div>
-                    ) : null}
-                    {sessionStarted && !session.resultLogged ? (
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        disabled={pending}
-                        onClick={() => setLoggingSessionId(session.id)}
-                        className="mt-3"
-                      >
-                        Log result
-                      </Button>
-                    ) : session.resultLogged ? (
-                      <p className="mt-2 text-xs text-subtle">Result logged</p>
-                    ) : null}
+                  {(fatigueAdviceBySession[session.id]?.length ?? 0) > 0 ? (
+                    <div className="mt-2 rounded-lg border border-warn/30 bg-warn/8 p-2 text-xs text-warn">
+                      <p className="font-semibold">Fatigue advisory only</p>
+                      {fatigueAdviceBySession[session.id].slice(0, 4).map((advice) => (
+                        <p key={advice.muscle}>
+                          This loads {formatLabel(advice.muscle)}; trained {advice.trainedDays} of the last {advice.windowDays} days.
+                        </p>
+                      ))}
+                    </div>
+                  ) : null}
+                  {sessionHasStarted(session.startsAt) && !session.resultLogged ? (
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      disabled={pending}
+                      onClick={() => setLoggingSessionId(session.id)}
+                      className="mt-3"
+                    >
+                      Log result
+                    </Button>
+                  ) : session.resultLogged ? (
+                    <p className="mt-2 text-xs text-subtle">Result logged</p>
+                  ) : null}
                 </div>
               ) : null}
               {overrideDraft?.sessionId === session.id ? (
@@ -1085,9 +1076,7 @@ export function ClassesClient({
               ) : null}
               <p className="text-xs text-subtle">
                 {session.workoutPosted ? "Workout posted" : "Workout not posted yet"}
-                  {selectedGym?.membershipRole !== MembershipRole.Member
-                    ? ` · ${session.reservationCount} reserved`
-                    : ""}
+                {selectedGym?.membershipRole !== MembershipRole.Member ? ` · ${session.reservationCount} reserved` : ""}
               </p>
               {rosterSessionId === session.id && roster ? (
                 <div className="space-y-3 rounded-xl border border-border bg-app p-3">
@@ -1143,11 +1132,11 @@ export function ClassesClient({
                                   {field.field === "movementId"
                                     ? `${diff.programmedMovementName} → ${diff.assignedMovementName}`
                                     : `${diff.programmedMovementName} ${formatLabel(
-                                          field.field
+                                        field.field,
                                       )}: ${field.programmedValue ?? "—"} → ${field.assignedValue ?? "—"}`}
                                   <span className="text-subtle">{` · ${formatLabel(field.provenance)}`}</span>
                                 </p>
-                                ))
+                              )),
                             )}
                           </div>
                         ) : (
@@ -1160,26 +1149,26 @@ export function ClassesClient({
                   )}
                 </div>
               ) : null}
-                {!sessionStarted ? (
-              <Button
-                size="sm"
-                variant={session.reserved ? "danger" : "primary"}
-                disabled={pending || (!session.reserved && session.reservationCount >= session.capacity)}
-                onClick={() => toggleReservation(session)}
-              >
-                {session.reserved
-                  ? "Cancel Reservation"
-                  : session.reservationCount >= session.capacity
-                    ? "Class full"
-                    : "Reserve spot"}
-              </Button>
-                ) : null}
-                {!sessionStarted && selectedGym?.membershipRole === MembershipRole.Owner ? (
+              {!sessionHasStarted(session.startsAt) ? (
+                <Button
+                  size="sm"
+                  variant={session.reserved ? "danger" : "primary"}
+                  disabled={pending || (!session.reserved && session.reservationCount >= session.capacity)}
+                  onClick={() => toggleReservation(session)}
+                >
+                  {session.reserved
+                    ? "Cancel Reservation"
+                    : session.reservationCount >= session.capacity
+                      ? "Class full"
+                      : "Reserve spot"}
+                </Button>
+              ) : null}
+              {!sessionHasStarted(session.startsAt) && selectedGym?.membershipRole === MembershipRole.Owner ? (
                 <Button size="sm" variant="danger" disabled={pending} onClick={() => cancelSession(session.id)}>
                   Cancel Session
                 </Button>
               ) : null}
-                {!sessionStarted && canProgram && programmedWorkoutsBySession[session.id] ? (
+              {!sessionHasStarted(session.startsAt) && canProgram && programmedWorkoutsBySession[session.id] ? (
                 <Button size="sm" disabled={pending} onClick={() => beginProgrammedWorkoutEdit(session)}>
                   Edit this Session workout
                 </Button>
@@ -1190,8 +1179,7 @@ export function ClassesClient({
                 </Button>
               ) : null}
             </Card>
-            );
-          })}
+          ))}
         </div>
       )}
       {loggingSessionId && assignedWorkoutsBySession[loggingSessionId] ? (
@@ -1204,4 +1192,8 @@ export function ClassesClient({
       ) : null}
     </>
   );
+}
+
+function sessionHasStarted(startsAt: Date): boolean {
+  return startsAt <= new Date();
 }

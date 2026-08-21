@@ -25,12 +25,23 @@ import {
 import { createMovementPrescription } from "../domain/prescription";
 import { checkMovement, mergeConstraints } from "../domain/scaling/constraint-engine";
 import { assignedWorkoutOverrideSchema } from "../validation";
-import { resolveProgrammedMovements, syncAssignedWorkoutLedger } from "./assigned-workout";
+import {
+  resolveProgrammedMovements,
+  syncAssignedWorkoutLedger,
+} from "./assigned-workout";
 import { loadAdjustmentOffer } from "./load-adjustment";
 
 type OverrideInput = z.infer<typeof assignedWorkoutOverrideSchema>;
 
-const PRESCRIPTION_FIELDS = ["movementId", "reps", "load", "distance", "duration", "calories", "notes"] as const;
+const PRESCRIPTION_FIELDS = [
+  "movementId",
+  "reps",
+  "load",
+  "distance",
+  "duration",
+  "calories",
+  "notes",
+] as const;
 
 function allowedOverrideFields(loadType: string): Set<string> {
   switch (loadType) {
@@ -48,11 +59,11 @@ function allowedOverrideFields(loadType: string): Set<string> {
 function overrideSummary(
   movementIndex: number,
   prescription: MovementPrescription,
-  provenance: AssignedMovementProvenance
+  provenance: AssignedMovementProvenance,
 ): string {
-  const values = PRESCRIPTION_FIELDS.filter((field) => provenance[field] === "overridden").map(
-    (field) => `${field} ${String(prescription[field])}`
-  );
+  const values = PRESCRIPTION_FIELDS.filter(
+    (field) => provenance[field] === "overridden",
+  ).map((field) => `${field} ${String(prescription[field])}`);
   return `${ATHLETE_OVERRIDE_EXPLANATION_PREFIX} movement ${movementIndex + 1} ${values.join(", ")}`;
 }
 
@@ -61,7 +72,7 @@ function replaceOverrideExplanation(
   movementIndex: number,
   programmedMovementId: string,
   personalisedMovementId: string,
-  explanations: string[]
+  explanations: string[],
 ): PersonalisationChange[] {
   const next = changes
     .map((change) => ({
@@ -71,7 +82,7 @@ function replaceOverrideExplanation(
           ? change.explanations.filter(
               (item) =>
                 !item.startsWith(ATHLETE_OVERRIDE_EXPLANATION_PREFIX) &&
-                !item.startsWith(ATHLETE_OVERRIDE_WARNING_PREFIX)
+                !item.startsWith(ATHLETE_OVERRIDE_WARNING_PREFIX),
             )
           : [...change.explanations],
     }))
@@ -90,7 +101,11 @@ function replaceOverrideExplanation(
 }
 
 /** Apply an athlete-authored edit immediately to their own Assigned Workout. */
-export async function overrideAssignedWorkoutForAthlete(classSessionId: string, athleteId: string, raw: unknown) {
+export async function overrideAssignedWorkoutForAthlete(
+  classSessionId: string,
+  athleteId: string,
+  raw: unknown,
+) {
   const input: OverrideInput = assignedWorkoutOverrideSchema.parse(raw);
   return db.transaction(async (tx) => {
     const [session] = await tx
@@ -109,7 +124,12 @@ export async function overrideAssignedWorkoutForAthlete(classSessionId: string, 
     const [reservation] = await tx
       .select({ id: reservations.id })
       .from(reservations)
-      .where(and(eq(reservations.classSessionId, classSessionId), eq(reservations.athleteId, athleteId)))
+      .where(
+        and(
+          eq(reservations.classSessionId, classSessionId),
+          eq(reservations.athleteId, athleteId),
+        ),
+      )
       .limit(1)
       .for("update");
     if (!reservation) throw new Error("Assigned Workout not found");
@@ -137,7 +157,11 @@ export async function overrideAssignedWorkoutForAthlete(classSessionId: string, 
     const currentProvenance = assigned.provenance[input.movementIndex];
     if (!current || !currentProvenance) throw new Error("Movement line not found");
 
-    const [athleteRow] = await tx.select().from(athletes).where(eq(athletes.id, athleteId)).limit(1);
+    const [athleteRow] = await tx
+      .select()
+      .from(athletes)
+      .where(eq(athletes.id, athleteId))
+      .limit(1);
     const impedimentRows = await tx
       .select()
       .from(impediments)
@@ -145,8 +169,11 @@ export async function overrideAssignedWorkoutForAthlete(classSessionId: string, 
         and(
           eq(impediments.athleteId, athleteId),
           lte(impediments.startDate, session.localDate),
-          or(isNull(impediments.endDate), gte(impediments.endDate, session.localDate))
-        )
+          or(
+            isNull(impediments.endDate),
+            gte(impediments.endDate, session.localDate),
+          ),
+        ),
       );
     const floorRows = await tx
       .select({ equipment: gymEquipment.equipment })
@@ -154,7 +181,9 @@ export async function overrideAssignedWorkoutForAthlete(classSessionId: string, 
       .where(eq(gymEquipment.gymId, session.gymId));
     if (!athleteRow) throw new Error("Athlete not found");
     const athlete = rowToAthlete(athleteRow, impedimentRows);
-    const floor = new Set(floorRows.map(({ equipment }) => equipment as Equipment));
+    const floor = new Set(
+      floorRows.map(({ equipment }) => equipment as Equipment),
+    );
     const targetMovementId = input.movementId ?? current.movementId;
     const target = getMovement(targetMovementId);
     if (!target) throw new Error("Movement not found");
@@ -199,8 +228,15 @@ export async function overrideAssignedWorkoutForAthlete(classSessionId: string, 
       }
     }
 
-    const programmedMovements = resolveProgrammedMovements(programmed.workout, athlete.sex);
-    const explanations = [overrideSummary(input.movementIndex, prescription, provenance)];
+    const programmedMovements = resolveProgrammedMovements(
+      programmed.workout,
+      athlete.sex,
+    );
+    const explanations = [overrideSummary(
+      input.movementIndex,
+      prescription,
+      provenance,
+    )];
     const programmedPrescription = programmedMovements[input.movementIndex];
     if (
       prescription.load !== undefined &&
@@ -209,21 +245,21 @@ export async function overrideAssignedWorkoutForAthlete(classSessionId: string, 
       prescription.load > programmedPrescription.load
     ) {
       explanations.push(
-        `${ATHLETE_OVERRIDE_WARNING_PREFIX} movement ${input.movementIndex + 1} load is heavier than programmed`
+        `${ATHLETE_OVERRIDE_WARNING_PREFIX} movement ${input.movementIndex + 1} load is heavier than programmed`,
       );
     }
     const movements = assigned.workout.movements.map((movement, index) =>
-      index === input.movementIndex ? prescription : movement
+      index === input.movementIndex ? prescription : movement,
     );
     const nextProvenance = assigned.provenance.map((entry, index) =>
-      index === input.movementIndex ? provenance : entry
+      index === input.movementIndex ? provenance : entry,
     );
     const changes = replaceOverrideExplanation(
       assigned.changes,
       input.movementIndex,
       provenance.programmedMovementId ?? targetMovementId,
       targetMovementId,
-      explanations
+      explanations,
     );
     const snapshot = {
       workout: { ...assigned.workout, movements },
@@ -238,7 +274,9 @@ export async function overrideAssignedWorkoutForAthlete(classSessionId: string, 
       })
       .where(eq(assignedWorkouts.id, assigned.id));
     await syncAssignedWorkoutLedger(tx, athleteId, snapshot);
-    return input.load === undefined || current.load === undefined || input.load >= current.load
+    return input.load === undefined ||
+      current.load === undefined ||
+      input.load >= current.load
       ? null
       : loadAdjustmentOffer(targetMovementId, input.load, athlete.sex);
   });
