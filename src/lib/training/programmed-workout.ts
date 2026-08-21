@@ -1,4 +1,13 @@
-import { and, eq, gt, isNull, lt, notInArray } from "drizzle-orm";
+import {
+  and,
+  count,
+  eq,
+  gt,
+  inArray,
+  isNull,
+  lt,
+  notInArray,
+} from "drizzle-orm";
 import { db } from "../db";
 import {
   classSessions,
@@ -15,9 +24,11 @@ import { Equipment } from "../domain/models/equipment";
 import type { ProgramOptions } from "../domain/programming";
 import {
   findRecoveringMuscles,
+  findStationWarnings,
   programWorkout,
   recoveringMusclesLoadedBy,
 } from "../domain/programming";
+import type { StationWarning } from "../domain/programming";
 import type { Muscle } from "../domain/models/body";
 import { getMovement } from "../domain/movements/library";
 import type { Workout } from "../domain/models/workout";
@@ -29,6 +40,11 @@ export interface ProgrammedWorkoutWriteResult {
   programmedWorkoutIds: string[];
   recoveringMuscles: Muscle[];
   warningMuscles: Muscle[];
+  stationWarnings: SessionStationWarning[];
+}
+
+export interface SessionStationWarning extends StationWarning {
+  classSessionId: string;
 }
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -40,6 +56,48 @@ type TargetSession = {
 
 function sortedMuscles(muscles: ReadonlySet<Muscle>): Muscle[] {
   return [...muscles].sort((left, right) => left.localeCompare(right));
+}
+
+type FloorRow = {
+  equipment: string;
+  stationCount: number | null;
+};
+
+async function findSessionStationWarningsInTransaction(
+  tx: Transaction,
+  sessions: readonly TargetSession[],
+  workout: Workout,
+  floorRows: readonly FloorRow[],
+): Promise<SessionStationWarning[]> {
+  const stationCounts = Object.fromEntries(
+    floorRows
+      .filter(({ stationCount }) => stationCount !== null)
+      .map(({ equipment, stationCount }) => [equipment, stationCount!]),
+  ) as Partial<Record<Equipment, number>>;
+  const headcountRows = await tx
+    .select({
+      classSessionId: reservations.classSessionId,
+      value: count(),
+    })
+    .from(reservations)
+    .where(
+      inArray(
+        reservations.classSessionId,
+        sessions.map(({ id }) => id),
+      ),
+    )
+    .groupBy(reservations.classSessionId);
+  const headcounts = new Map(
+    headcountRows.map(({ classSessionId, value }) => [classSessionId, value]),
+  );
+
+  return sessions.flatMap((session) =>
+    findStationWarnings(
+      workout,
+      stationCounts,
+      headcounts.get(session.id) ?? 0,
+    ).map((warning) => ({ ...warning, classSessionId: session.id })),
+  );
 }
 
 async function lockProgrammingGymInTransaction(
@@ -264,6 +322,19 @@ export async function programGymDayInTransaction(
   );
   const workout = parseProgrammedWorkout(rawWorkout);
   await assertSourceWorkoutExists(tx, sourceWorkoutId);
+  const floorRows = await tx
+    .select({
+      equipment: gymEquipment.equipment,
+      stationCount: gymEquipment.stationCount,
+    })
+    .from(gymEquipment)
+    .where(eq(gymEquipment.gymId, gymId));
+  const stationWarnings = await findSessionStationWarningsInTransaction(
+    tx,
+    sessions,
+    workout,
+    floorRows,
+  );
   const ids = await persistGymDayInTransaction(
     tx,
     gymId,
@@ -278,6 +349,7 @@ export async function programGymDayInTransaction(
     warningMuscles: sortedMuscles(
       recoveringMusclesLoadedBy(workout, recoveringMuscles),
     ),
+    stationWarnings,
   };
 }
 
@@ -355,12 +427,19 @@ export async function generateProgrammedWorkoutForGymDay(
       workout,
       null,
     );
+    const stationWarnings = await findSessionStationWarningsInTransaction(
+      tx,
+      sessions,
+      workout,
+      floorRows,
+    );
     return {
       programmedWorkoutIds: ids,
       recoveringMuscles: sortedMuscles(recoveringMuscles),
       warningMuscles: sortedMuscles(
         recoveringMusclesLoadedBy(workout, recoveringMuscles),
       ),
+      stationWarnings,
     };
   });
 }
@@ -397,6 +476,19 @@ export async function updateProgrammedWorkoutForSession(
       windowHours,
     );
     const workout = parseProgrammedWorkout(rawWorkout);
+    const floorRows = await tx
+      .select({
+        equipment: gymEquipment.equipment,
+        stationCount: gymEquipment.stationCount,
+      })
+      .from(gymEquipment)
+      .where(eq(gymEquipment.gymId, candidate.gymId));
+    const stationWarnings = await findSessionStationWarningsInTransaction(
+      tx,
+      [session],
+      workout,
+      floorRows,
+    );
 
     const [updated] = await tx
       .update(programmedWorkouts)
@@ -423,6 +515,7 @@ export async function updateProgrammedWorkoutForSession(
       warningMuscles: sortedMuscles(
         recoveringMusclesLoadedBy(workout, recoveringMuscles),
       ),
+      stationWarnings,
     };
   });
 }

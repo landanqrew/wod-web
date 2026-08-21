@@ -276,6 +276,7 @@ export function ClassesClient({
               .join(", ")} were loaded inside this Gym's recovery window.`,
           );
         }
+        showStationWarnings(result.stationWarnings);
         setProgrammingDraft(null);
         router.refresh();
       } catch {
@@ -311,11 +312,38 @@ export function ClassesClient({
               .join(", ")}.`,
           );
         }
+        showStationWarnings(result.stationWarnings);
         router.refresh();
       } catch {
         toast.error("Could not generate a Programmed Workout for that day.");
       }
     });
+  }
+
+  function showStationWarnings(
+    warnings: Array<{
+      classSessionId: string;
+      movementName: string;
+      equipment: string;
+      reservedHeadcount: number;
+      availableStations: number;
+      shortfall: number;
+    }>,
+  ) {
+    for (const warning of warnings) {
+      const session = upcomingSessions.find(
+        ({ id }) => id === warning.classSessionId,
+      );
+      toast.warning(
+        `${warning.movementName}${
+          session ? ` · ${session.className}` : ""
+        }: short ${warning.shortfall} ${formatLabel(
+          warning.equipment,
+        )} Station${warning.shortfall === 1 ? "" : "s"} for ${
+          warning.reservedHeadcount
+        } reservations (${warning.availableStations} available). Plan heats or rotations.`,
+      );
+    }
   }
 
   function beginOverride(
