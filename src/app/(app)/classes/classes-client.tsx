@@ -5,22 +5,9 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, EmptyState, PageHeader } from "@/components/ui/card";
-import {
-  ChipToggle,
-  FieldRow,
-  Input,
-  Select,
-  Textarea,
-} from "@/components/ui/field";
-import {
-  cancelClassSessionAction,
-  createClassAction,
-  updateClassAction,
-} from "@/lib/actions/gym-class";
-import {
-  cancelReservationAction,
-  reserveClassSessionAction,
-} from "@/lib/actions/reservation";
+import { ChipToggle, FieldRow, Input, Select, Textarea } from "@/components/ui/field";
+import { cancelClassSessionAction, createClassAction, updateClassAction } from "@/lib/actions/gym-class";
+import { cancelReservationAction, reserveClassSessionAction } from "@/lib/actions/reservation";
 import {
   generateGymDayAction,
   programGymDayAction,
@@ -28,20 +15,13 @@ import {
 } from "@/lib/actions/programmed-workout";
 import { overrideAssignedWorkoutAction } from "@/lib/actions/assigned-workout";
 import { promoteLoadAdjustmentAction } from "@/lib/actions/load-adjustment";
+import { getClassSessionRosterAction } from "@/lib/actions/roster";
 import { MembershipRole, type Gym, type GymMember } from "@/lib/domain/models/gym";
 import type { AssignedWorkout } from "@/lib/domain/models/assigned-workout";
 import type { ClassSessionSummary, GymClass } from "@/lib/domain/models/gym-class";
 import type { ClassSessionRoster } from "@/lib/domain/models/roster";
-import {
-  ScoreType,
-  WorkoutFormat,
-  type MovementPrescription,
-  type Workout,
-} from "@/lib/domain/models/workout";
-import {
-  changeProgrammedWorkoutFormat,
-  createManualProgrammedWorkout,
-} from "@/lib/domain/programming/manual-workout";
+import { ScoreType, WorkoutFormat, type MovementPrescription, type Workout } from "@/lib/domain/models/workout";
+import { changeProgrammedWorkoutFormat, createManualProgrammedWorkout } from "@/lib/domain/programming/manual-workout";
 import type { WeeklyClassTime } from "@/lib/domain/scheduling/expand-class-schedule";
 import { formatLabel, prescriptionLine } from "@/lib/format";
 
@@ -65,12 +45,7 @@ type ProgrammingDraft = {
   movementsJson: string;
 };
 
-type ProgrammingNumberField =
-  | "timeCap"
-  | "rounds"
-  | "workInterval"
-  | "restInterval"
-  | "emomMinutes";
+type ProgrammingNumberField = "timeCap" | "rounds" | "workInterval" | "restInterval" | "emomMinutes";
 
 type OverrideDraft = {
   sessionId: string;
@@ -102,7 +77,6 @@ export function ClassesClient({
   classesByGym,
   coachesByGym,
   movementOptionsBySession,
-  rostersBySession,
 }: {
   gyms: Gym[];
   upcomingSessions: ClassSessionSummary[];
@@ -110,35 +84,40 @@ export function ClassesClient({
   assignedWorkoutsBySession: Record<string, AssignedWorkout | null>;
   classesByGym: Record<string, GymClass[]>;
   coachesByGym: Record<string, GymMember[]>;
-  movementOptionsBySession: Record<
-    string,
-    Array<{ id: string; name: string; loadType: string; available: boolean }>
-  >;
-  rostersBySession: Record<string, ClassSessionRoster>;
+  movementOptionsBySession: Record<string, Array<{ id: string; name: string; loadType: string; available: boolean }>>;
 }) {
   const router = useRouter();
-  const ownerGyms = gyms.filter(
-    ({ membershipRole }) => membershipRole === MembershipRole.Owner,
-  );
+  const ownerGyms = gyms.filter(({ membershipRole }) => membershipRole === MembershipRole.Owner);
   const [selectedGymId, setSelectedGymId] = React.useState(gyms[0]?.id ?? "");
   const [draft, setDraft] = React.useState<Draft | null>(null);
-  const [programmingDraft, setProgrammingDraft] =
-    React.useState<ProgrammingDraft | null>(null);
+  const [programmingDraft, setProgrammingDraft] = React.useState<ProgrammingDraft | null>(null);
   const [programmingDate, setProgrammingDate] = React.useState("");
-  const [overrideDraft, setOverrideDraft] = React.useState<OverrideDraft | null>(
-    null,
-  );
-  const [promotionPrompt, setPromotionPrompt] =
-    React.useState<PromotionPrompt | null>(null);
-  const [rosterSessionId, setRosterSessionId] = React.useState<string | null>(
-    null,
-  );
+  const [overrideDraft, setOverrideDraft] = React.useState<OverrideDraft | null>(null);
+  const [promotionPrompt, setPromotionPrompt] = React.useState<PromotionPrompt | null>(null);
+  const [rosterSessionId, setRosterSessionId] = React.useState<string | null>(null);
+  const [roster, setRoster] = React.useState<ClassSessionRoster | null>(null);
   const [pending, startTransition] = React.useTransition();
   const selectedGym = gyms.find(({ id }) => id === selectedGymId) ?? gyms[0];
 
+  function toggleRoster(classSessionId: string) {
+    if (rosterSessionId === classSessionId) {
+      setRosterSessionId(null);
+      setRoster(null);
+      return;
+    }
+    startTransition(async () => {
+      try {
+        const nextRoster = await getClassSessionRosterAction(classSessionId);
+        setRoster(nextRoster);
+        setRosterSessionId(classSessionId);
+      } catch {
+        toast.error("Could not load that Coach Roster.");
+      }
+    });
+  }
+
   function beginCreate() {
-    const gym =
-      ownerGyms.find(({ id }) => id === selectedGym?.id) ?? ownerGyms[0];
+    const gym = ownerGyms.find(({ id }) => id === selectedGym?.id) ?? ownerGyms[0];
     if (!gym) return;
     const coach = coachesByGym[gym.id]?.[0];
     setDraft({
@@ -202,10 +181,7 @@ export function ClassesClient({
             );
             if (!discardAssignedWorkout) return;
           }
-          let result = await cancelReservationAction(
-            session.id,
-            discardAssignedWorkout,
-          );
+          let result = await cancelReservationAction(session.id, discardAssignedWorkout);
           if (!result.cancelled) {
             discardAssignedWorkout = window.confirm(
               "A new Assigned Workout is now attached. Cancelling removes it and any personal edits. Continue?",
@@ -243,9 +219,7 @@ export function ClassesClient({
       localDate: session.localDate,
       workout,
       movementsJson: JSON.stringify(
-        workout.movements.map(({ movement: _movement, ...prescription }) =>
-          prescription,
-        ),
+        workout.movements.map(({ movement: _movement, ...prescription }) => prescription),
         null,
         2,
       ),
@@ -256,24 +230,13 @@ export function ClassesClient({
     if (!programmingDraft) return;
     startTransition(async () => {
       try {
-        const movements = JSON.parse(
-          programmingDraft.movementsJson,
-        ) as MovementPrescription[];
+        const movements = JSON.parse(programmingDraft.movementsJson) as MovementPrescription[];
         const workout = { ...programmingDraft.workout, movements };
         const result = programmingDraft.sessionId
-          ? await updateSessionProgrammedWorkoutAction(
-            programmingDraft.sessionId,
-            workout,
-          )
-          : await programGymDayAction(
-            programmingDraft.gymId,
-            programmingDraft.localDate,
-            workout,
-          );
+          ? await updateSessionProgrammedWorkoutAction(programmingDraft.sessionId, workout)
+          : await programGymDayAction(programmingDraft.gymId, programmingDraft.localDate, workout);
         toast.success(
-          programmingDraft.sessionId
-            ? "Class Session workout updated"
-            : "Workout programmed for the gym-day",
+          programmingDraft.sessionId ? "Class Session workout updated" : "Workout programmed for the gym-day",
         );
         if (result.warningMuscles.length > 0) {
           toast.warning(
@@ -291,10 +254,7 @@ export function ClassesClient({
     });
   }
 
-  function updateProgrammingNumber(
-    field: ProgrammingNumberField,
-    value: number,
-  ) {
+  function updateProgrammingNumber(field: ProgrammingNumberField, value: number) {
     if (!programmingDraft) return;
     setProgrammingDraft({
       ...programmingDraft,
@@ -312,11 +272,7 @@ export function ClassesClient({
         });
         toast.success("Gym-floor workout programmed for the day");
         if (result.recoveringMuscles.length > 0) {
-          toast.info(
-            `Generation avoided recovering Muscles: ${result.recoveringMuscles
-              .map(formatLabel)
-              .join(", ")}.`,
-          );
+          toast.info(`Generation avoided recovering Muscles: ${result.recoveringMuscles.map(formatLabel).join(", ")}.`);
         }
         showStationWarnings(result.stationWarnings);
         router.refresh();
@@ -337,9 +293,7 @@ export function ClassesClient({
     }>,
   ) {
     for (const warning of warnings) {
-      const session = upcomingSessions.find(
-        ({ id }) => id === warning.classSessionId,
-      );
+      const session = upcomingSessions.find(({ id }) => id === warning.classSessionId);
       const sessionLabel = session
         ? `${session.className} · ${new Intl.DateTimeFormat("en-US", {
             month: "short",
@@ -351,9 +305,7 @@ export function ClassesClient({
           }).format(new Date(session.startsAt))}`
         : undefined;
       toast.warning(
-        `${warning.movementName}${
-          sessionLabel ? ` · ${sessionLabel}` : ""
-        }: short ${warning.shortfall} ${formatLabel(
+        `${warning.movementName}${sessionLabel ? ` · ${sessionLabel}` : ""}: short ${warning.shortfall} ${formatLabel(
           warning.equipment,
         )} Station${warning.shortfall === 1 ? "" : "s"} for ${
           warning.reservedHeadcount
@@ -362,11 +314,7 @@ export function ClassesClient({
     }
   }
 
-  function beginOverride(
-    sessionId: string,
-    movementIndex: number,
-    prescription: MovementPrescription,
-  ) {
+  function beginOverride(sessionId: string, movementIndex: number, prescription: MovementPrescription) {
     const initial = {
       movementId: prescription.movementId,
       reps: prescription.reps?.toString() ?? "",
@@ -385,19 +333,14 @@ export function ClassesClient({
     if (!overrideDraft) return;
     startTransition(async () => {
       try {
-        const changedNumber = (
-          field: "reps" | "load" | "duration",
-        ) =>
-          overrideDraft[field] === "" ||
-          overrideDraft[field] === overrideDraft.initial[field]
+        const changedNumber = (field: "reps" | "load" | "duration") =>
+          overrideDraft[field] === "" || overrideDraft[field] === overrideDraft.initial[field]
             ? undefined
             : Number(overrideDraft[field]);
         const result = await overrideAssignedWorkoutAction(overrideDraft.sessionId, {
           movementIndex: overrideDraft.movementIndex,
           movementId:
-            overrideDraft.movementId === overrideDraft.initial.movementId
-              ? undefined
-              : overrideDraft.movementId,
+            overrideDraft.movementId === overrideDraft.initial.movementId ? undefined : overrideDraft.movementId,
           reps: changedNumber("reps"),
           load: changedNumber("load"),
           duration: changedNumber("duration"),
@@ -430,9 +373,7 @@ export function ClassesClient({
           reviewAfterSessions: 5,
         });
         if (result.status === "impediment_required") {
-          toast.info(
-            "Record a dated Impediment so the injury restriction can expire.",
-          );
+          toast.info("Record a dated Impediment so the injury restriction can expire.");
           setPromotionPrompt(null);
           router.push("/adjustments?newImpediment=1");
           return;
@@ -469,36 +410,25 @@ export function ClassesClient({
     });
   }
 
-  const selectedClasses = selectedGym ? classesByGym[selectedGym.id] ?? [] : [];
-  const selectedSessions = selectedGym
-    ? upcomingSessions.filter(({ gymId }) => gymId === selectedGym.id)
-    : [];
+  const selectedClasses = selectedGym ? (classesByGym[selectedGym.id] ?? []) : [];
+  const selectedSessions = selectedGym ? upcomingSessions.filter(({ gymId }) => gymId === selectedGym.id) : [];
   const selectedDates = [...new Set(selectedSessions.map(({ localDate }) => localDate))];
-  const effectiveProgrammingDate = selectedDates.includes(programmingDate)
-    ? programmingDate
-    : selectedDates[0] ?? "";
+  const effectiveProgrammingDate = selectedDates.includes(programmingDate) ? programmingDate : (selectedDates[0] ?? "");
   const canProgram =
-    selectedGym?.membershipRole === MembershipRole.Owner ||
-    selectedGym?.membershipRole === MembershipRole.Coach;
+    selectedGym?.membershipRole === MembershipRole.Owner || selectedGym?.membershipRole === MembershipRole.Coach;
 
   return (
     <>
       <PageHeader
         title="Classes"
         subtitle={selectedGym ? `Viewing ${selectedGym.name}` : "Upcoming Class Sessions"}
-        action={
-          ownerGyms.length > 0 ? <Button onClick={beginCreate}>Create Class</Button> : null
-        }
+        action={ownerGyms.length > 0 ? <Button onClick={beginCreate}>Create Class</Button> : null}
       />
 
       {gyms.length > 1 ? (
         <div className="mb-4 flex flex-wrap gap-2">
           {gyms.map((gym) => (
-            <ChipToggle
-              key={gym.id}
-              active={gym.id === selectedGym?.id}
-              onClick={() => setSelectedGymId(gym.id)}
-            >
+            <ChipToggle key={gym.id} active={gym.id === selectedGym?.id} onClick={() => setSelectedGymId(gym.id)}>
               {gym.name}
             </ChipToggle>
           ))}
@@ -521,7 +451,9 @@ export function ClassesClient({
                 }}
               >
                 {ownerGyms.map((gym) => (
-                  <option key={gym.id} value={gym.id}>{gym.name}</option>
+                  <option key={gym.id} value={gym.id}>
+                    {gym.name}
+                  </option>
                 ))}
               </Select>
             </FieldRow>
@@ -537,9 +469,7 @@ export function ClassesClient({
             <FieldRow label="Coach">
               <Select
                 value={draft.coachAthleteId}
-                onChange={(event) =>
-                  setDraft({ ...draft, coachAthleteId: event.target.value })
-                }
+                onChange={(event) => setDraft({ ...draft, coachAthleteId: event.target.value })}
               >
                 {(coachesByGym[draft.gymId] ?? []).map((coach) => (
                   <option key={coach.athleteId} value={coach.athleteId}>
@@ -559,9 +489,7 @@ export function ClassesClient({
                 type="number"
                 min={1}
                 value={draft.capacity}
-                onChange={(event) =>
-                  setDraft({ ...draft, capacity: Number(event.target.value) })
-                }
+                onChange={(event) => setDraft({ ...draft, capacity: Number(event.target.value) })}
               />
             </FieldRow>
           </div>
@@ -590,9 +518,7 @@ export function ClassesClient({
                       setDraft({
                         ...draft,
                         weeklyTimes: draft.weeklyTimes.map((time) =>
-                          time.dayOfWeek === weeklyTime.dayOfWeek
-                            ? { ...time, localTime: event.target.value }
-                            : time,
+                          time.dayOfWeek === weeklyTime.dayOfWeek ? { ...time, localTime: event.target.value } : time,
                         ),
                       })
                     }
@@ -601,8 +527,12 @@ export function ClassesClient({
               ))}
           </div>
           <div className="flex gap-2">
-            <Button variant="primary" disabled={pending} onClick={save}>Save Class</Button>
-            <Button disabled={pending} onClick={() => setDraft(null)}>Cancel</Button>
+            <Button variant="primary" disabled={pending} onClick={save}>
+              Save Class
+            </Button>
+            <Button disabled={pending} onClick={() => setDraft(null)}>
+              Cancel
+            </Button>
           </div>
         </Card>
       ) : null}
@@ -617,26 +547,18 @@ export function ClassesClient({
           </div>
           <div className="flex flex-wrap items-end gap-3">
             <FieldRow label="Class date" className="min-w-44">
-              <Select
-                value={effectiveProgrammingDate}
-                onChange={(event) => setProgrammingDate(event.target.value)}
-              >
+              <Select value={effectiveProgrammingDate} onChange={(event) => setProgrammingDate(event.target.value)}>
                 {selectedDates.map((localDate) => (
-                  <option key={localDate} value={localDate}>{localDate}</option>
+                  <option key={localDate} value={localDate}>
+                    {localDate}
+                  </option>
                 ))}
               </Select>
             </FieldRow>
-            <Button
-              variant="primary"
-              disabled={pending}
-              onClick={() => generateGymDay(effectiveProgrammingDate)}
-            >
+            <Button variant="primary" disabled={pending} onClick={() => generateGymDay(effectiveProgrammingDate)}>
               Generate from floor
             </Button>
-            <Button
-              disabled={pending}
-              onClick={() => beginManualProgramming(effectiveProgrammingDate)}
-            >
+            <Button disabled={pending} onClick={() => beginManualProgramming(effectiveProgrammingDate)}>
               Write by hand
             </Button>
           </div>
@@ -647,9 +569,7 @@ export function ClassesClient({
         <Card className="mb-4 flex flex-col gap-4 p-5">
           <div>
             <h2 className="text-lg font-bold">
-              {programmingDraft.sessionId
-                ? "Edit this Class Session"
-                : `Write ${programmingDraft.localDate} by hand`}
+              {programmingDraft.sessionId ? "Edit this Class Session" : `Write ${programmingDraft.localDate} by hand`}
             </h2>
             <p className="text-xs text-subtle">
               Weighted movements use <code>rxLoad</code> with male and female values.
@@ -684,7 +604,9 @@ export function ClassesClient({
                 }
               >
                 {Object.values(WorkoutFormat).map((format) => (
-                  <option key={format} value={format}>{formatLabel(format)}</option>
+                  <option key={format} value={format}>
+                    {formatLabel(format)}
+                  </option>
                 ))}
               </Select>
             </FieldRow>
@@ -702,7 +624,9 @@ export function ClassesClient({
                 }
               >
                 {Object.values(ScoreType).map((scoreType) => (
-                  <option key={scoreType} value={scoreType}>{formatLabel(scoreType)}</option>
+                  <option key={scoreType} value={scoreType}>
+                    {formatLabel(scoreType)}
+                  </option>
                 ))}
               </Select>
             </FieldRow>
@@ -714,9 +638,7 @@ export function ClassesClient({
                   type="number"
                   min={1}
                   value={programmingDraft.workout.timeCap}
-                  onChange={(event) =>
-                    updateProgrammingNumber("timeCap", Number(event.target.value))
-                  }
+                  onChange={(event) => updateProgrammingNumber("timeCap", Number(event.target.value))}
                 />
               </FieldRow>
             ) : null}
@@ -726,9 +648,7 @@ export function ClassesClient({
                   type="number"
                   min={1}
                   value={programmingDraft.workout.rounds}
-                  onChange={(event) =>
-                    updateProgrammingNumber("rounds", Number(event.target.value))
-                  }
+                  onChange={(event) => updateProgrammingNumber("rounds", Number(event.target.value))}
                 />
               </FieldRow>
             ) : null}
@@ -738,12 +658,7 @@ export function ClassesClient({
                   type="number"
                   min={1}
                   value={programmingDraft.workout.emomMinutes}
-                  onChange={(event) =>
-                    updateProgrammingNumber(
-                      "emomMinutes",
-                      Number(event.target.value),
-                    )
-                  }
+                  onChange={(event) => updateProgrammingNumber("emomMinutes", Number(event.target.value))}
                 />
               </FieldRow>
             ) : null}
@@ -753,12 +668,7 @@ export function ClassesClient({
                   type="number"
                   min={1}
                   value={programmingDraft.workout.workInterval}
-                  onChange={(event) =>
-                    updateProgrammingNumber(
-                      "workInterval",
-                      Number(event.target.value),
-                    )
-                  }
+                  onChange={(event) => updateProgrammingNumber("workInterval", Number(event.target.value))}
                 />
               </FieldRow>
             ) : null}
@@ -768,12 +678,7 @@ export function ClassesClient({
                   type="number"
                   min={0}
                   value={programmingDraft.workout.restInterval}
-                  onChange={(event) =>
-                    updateProgrammingNumber(
-                      "restInterval",
-                      Number(event.target.value),
-                    )
-                  }
+                  onChange={(event) => updateProgrammingNumber("restInterval", Number(event.target.value))}
                 />
               </FieldRow>
             ) : null}
@@ -815,7 +720,9 @@ export function ClassesClient({
                   {gymClass.coachName ?? "Coach unassigned"} · {gymClass.capacity} capacity
                 </p>
               </div>
-              <Button size="sm" onClick={() => beginEdit(gymClass)}>Edit schedule</Button>
+              <Button size="sm" onClick={() => beginEdit(gymClass)}>
+                Edit schedule
+              </Button>
             </div>
           ))}
         </Card>
@@ -852,13 +759,9 @@ export function ClassesClient({
               </p>
               {programmedWorkoutsBySession[session.id] ? (
                 <div className="rounded-xl border border-border bg-app p-3">
-                  <p className="text-sm font-semibold">
-                    {programmedWorkoutsBySession[session.id]?.name}
-                  </p>
+                  <p className="text-sm font-semibold">{programmedWorkoutsBySession[session.id]?.name}</p>
                   <p className="mt-1 text-xs text-subtle">
-                    {programmedWorkoutsBySession[session.id]?.movements
-                      .map(prescriptionLine)
-                      .join(" · ")}
+                    {programmedWorkoutsBySession[session.id]?.movements.map(prescriptionLine).join(" · ")}
                   </p>
                 </div>
               ) : null}
@@ -866,27 +769,21 @@ export function ClassesClient({
                 <div className="rounded-xl border border-primary/30 bg-primary/5 p-3">
                   <p className="text-sm font-semibold">Your Assigned Workout</p>
                   <div className="mt-2 space-y-2">
-                    {assignedWorkoutsBySession[session.id]?.workout.movements.map(
-                      (prescription, movementIndex) => (
-                        <div
-                          key={`${movementIndex}-${prescription.movementId}`}
-                          className="flex items-center justify-between gap-2 text-xs"
+                    {assignedWorkoutsBySession[session.id]?.workout.movements.map((prescription, movementIndex) => (
+                      <div
+                        key={`${movementIndex}-${prescription.movementId}`}
+                        className="flex items-center justify-between gap-2 text-xs"
+                      >
+                        <span className="text-subtle">{prescriptionLine(prescription)}</span>
+                        <Button
+                          size="sm"
+                          disabled={pending}
+                          onClick={() => beginOverride(session.id, movementIndex, prescription)}
                         >
-                          <span className="text-subtle">
-                            {prescriptionLine(prescription)}
-                          </span>
-                          <Button
-                            size="sm"
-                            disabled={pending}
-                            onClick={() =>
-                              beginOverride(session.id, movementIndex, prescription)
-                            }
-                          >
-                            Edit
-                          </Button>
-                        </div>
-                      ),
-                    )}
+                          Edit
+                        </Button>
+                      </div>
+                    ))}
                   </div>
                   {(assignedWorkoutsBySession[session.id]?.changes.length ?? 0) > 0 ? (
                     <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-subtle">
@@ -897,9 +794,7 @@ export function ClassesClient({
                       ))}
                     </ul>
                   ) : (
-                    <p className="mt-2 text-xs text-subtle">
-                      Matches the programmed version after Rx resolution.
-                    </p>
+                    <p className="mt-2 text-xs text-subtle">Matches the programmed version after Rx resolution.</p>
                   )}
                 </div>
               ) : null}
@@ -919,20 +814,14 @@ export function ClassesClient({
                       }
                     >
                       {(movementOptionsBySession[session.id] ?? []).map((movement) => (
-                        <option
-                          key={movement.id}
-                          value={movement.id}
-                          disabled={!movement.available}
-                        >
+                        <option key={movement.id} value={movement.id} disabled={!movement.available}>
                           {movement.name}
                           {movement.available ? "" : " (unavailable)"}
                         </option>
                       ))}
                     </Select>
                   </FieldRow>
-                  {(["reps", "load", "duration"] as const)
-                    .filter(supportsOverrideField)
-                    .map((field) => (
+                  {(["reps", "load", "duration"] as const).filter(supportsOverrideField).map((field) => (
                     <FieldRow key={field} label={formatLabel(field)}>
                       <Input
                         type="number"
@@ -946,7 +835,7 @@ export function ClassesClient({
                         }
                       />
                     </FieldRow>
-                    ))}
+                  ))}
                   <div className="flex gap-2 sm:col-span-2">
                     <Button variant="primary" disabled={pending} onClick={saveOverride}>
                       Apply override
@@ -974,18 +863,10 @@ export function ClassesClient({
                     >
                       Keep for future
                     </Button>
-                    <Button
-                      size="sm"
-                      disabled={pending}
-                      onClick={() => answerPromotion("injury")}
-                    >
+                    <Button size="sm" disabled={pending} onClick={() => answerPromotion("injury")}>
                       This is pain or injury
                     </Button>
-                    <Button
-                      size="sm"
-                      disabled={pending}
-                      onClick={() => setPromotionPrompt(null)}
-                    >
+                    <Button size="sm" disabled={pending} onClick={() => setPromotionPrompt(null)}>
                       Just today
                     </Button>
                   </div>
@@ -993,56 +874,38 @@ export function ClassesClient({
               ) : null}
               <p className="text-xs text-subtle">
                 {session.workoutPosted ? "Workout posted" : "Workout not posted yet"}
-                {selectedGym?.membershipRole !== MembershipRole.Member
-                  ? ` · ${session.reservationCount} reserved`
-                  : ""}
+                {selectedGym?.membershipRole !== MembershipRole.Member ? ` · ${session.reservationCount} reserved` : ""}
               </p>
-              {rosterSessionId === session.id && rostersBySession[session.id] ? (
+              {rosterSessionId === session.id && roster ? (
                 <div className="space-y-3 rounded-xl border border-border bg-app p-3">
                   <div>
                     <p className="text-sm font-semibold">Coach Roster</p>
-                    <p className="text-xs text-subtle">
-                      Informational only · athlete changes never require approval
-                    </p>
+                    <p className="text-xs text-subtle">Informational only · athlete changes never require approval</p>
                   </div>
-                  {rostersBySession[session.id].scalingPatterns.length > 0 ? (
+                  {roster.scalingPatterns.length > 0 ? (
                     <div className="rounded-lg border border-primary/30 bg-primary/5 p-2">
                       <p className="text-xs font-semibold">Class-wide patterns</p>
-                      {rostersBySession[session.id].scalingPatterns.map((pattern) => (
-                        <p
-                          key={pattern.programmedMovementId}
-                          className="mt-1 text-xs text-subtle"
-                        >
+                      {roster.scalingPatterns.map((pattern) => (
+                        <p key={pattern.programmedMovementId} className="mt-1 text-xs text-subtle">
                           {pattern.programmedMovementName} changed for {pattern.athleteCount} athletes
                         </p>
                       ))}
                     </div>
                   ) : null}
-                  {rostersBySession[session.id].athletes.length === 0 ? (
+                  {roster.athletes.length === 0 ? (
                     <p className="text-xs text-subtle">No athletes reserved yet.</p>
                   ) : (
-                    rostersBySession[session.id].athletes.map((rosterAthlete) => (
-                      <div
-                        key={rosterAthlete.athleteId}
-                        className="space-y-2 rounded-lg border border-border p-2"
-                      >
-                        <p className="text-sm font-semibold">
-                          {rosterAthlete.athleteName}
-                        </p>
+                    roster.athletes.map((rosterAthlete) => (
+                      <div key={rosterAthlete.athleteId} className="space-y-2 rounded-lg border border-border p-2">
+                        <p className="text-sm font-semibold">{rosterAthlete.athleteName}</p>
                         {rosterAthlete.activeImpediments.length > 0 ? (
                           <div className="space-y-1">
                             {rosterAthlete.activeImpediments.map((impediment) => (
                               <p key={impediment.id} className="text-xs text-subtle">
                                 {formatLabel(impediment.category)} · {formatLabel(impediment.severity)}
-                                {impediment.description
-                                  ? ` · ${impediment.description}`
-                                  : ""}
-                                {[...impediment.affectedMuscles, ...impediment.affectedJoints]
-                                  .length > 0
-                                  ? ` · ${[
-                                      ...impediment.affectedMuscles,
-                                      ...impediment.affectedJoints,
-                                    ]
+                                {impediment.description ? ` · ${impediment.description}` : ""}
+                                {[...impediment.affectedMuscles, ...impediment.affectedJoints].length > 0
+                                  ? ` · ${[...impediment.affectedMuscles, ...impediment.affectedJoints]
                                       .map(formatLabel)
                                       .join(", ")}`
                                   : ""}
@@ -1054,33 +917,22 @@ export function ClassesClient({
                         )}
                         {rosterAthlete.assignedWorkout ? (
                           <p className="text-xs text-subtle">
-                            {rosterAthlete.assignedWorkout.workout.movements
-                              .map(prescriptionLine)
-                              .join(" · ")}
+                            {rosterAthlete.assignedWorkout.workout.movements.map(prescriptionLine).join(" · ")}
                           </p>
                         ) : (
-                          <p className="text-xs text-subtle">
-                            Assigned Workout is not materialised yet.
-                          </p>
+                          <p className="text-xs text-subtle">Assigned Workout is not materialised yet.</p>
                         )}
-                        {rosterAthlete.diffs.length > 0 ? (
+                        {!rosterAthlete.assignedWorkout ? null : rosterAthlete.diffs.length > 0 ? (
                           <div className="space-y-1">
                             {rosterAthlete.diffs.flatMap((diff) =>
                               diff.fields.map((field) => (
-                                <p
-                                  key={`${diff.movementIndex}-${field.field}`}
-                                  className="text-xs"
-                                >
+                                <p key={`${diff.movementIndex}-${field.field}`} className="text-xs">
                                   {field.field === "movementId"
                                     ? `${diff.programmedMovementName} → ${diff.assignedMovementName}`
                                     : `${diff.programmedMovementName} ${formatLabel(
                                         field.field,
-                                      )}: ${field.programmedValue ?? "—"} → ${
-                                        field.assignedValue ?? "—"
-                                      }`}
-                                  <span className="text-subtle">
-                                    {` · ${formatLabel(field.provenance)}`}
-                                  </span>
+                                      )}: ${field.programmedValue ?? "—"} → ${field.assignedValue ?? "—"}`}
+                                  <span className="text-subtle">{` · ${formatLabel(field.provenance)}`}</span>
                                 </p>
                               )),
                             )}
@@ -1098,10 +950,7 @@ export function ClassesClient({
               <Button
                 size="sm"
                 variant={session.reserved ? "danger" : "primary"}
-                disabled={
-                  pending ||
-                  (!session.reserved && session.reservationCount >= session.capacity)
-                }
+                disabled={pending || (!session.reserved && session.reservationCount >= session.capacity)}
                 onClick={() => toggleReservation(session)}
               >
                 {session.reserved
@@ -1111,34 +960,17 @@ export function ClassesClient({
                     : "Reserve spot"}
               </Button>
               {selectedGym?.membershipRole === MembershipRole.Owner ? (
-                <Button
-                  size="sm"
-                  variant="danger"
-                  disabled={pending}
-                  onClick={() => cancelSession(session.id)}
-                >
+                <Button size="sm" variant="danger" disabled={pending} onClick={() => cancelSession(session.id)}>
                   Cancel Session
                 </Button>
               ) : null}
               {canProgram && programmedWorkoutsBySession[session.id] ? (
-                <Button
-                  size="sm"
-                  disabled={pending}
-                  onClick={() => beginProgrammedWorkoutEdit(session)}
-                >
+                <Button size="sm" disabled={pending} onClick={() => beginProgrammedWorkoutEdit(session)}>
                   Edit this Session workout
                 </Button>
               ) : null}
-              {canProgram && rostersBySession[session.id] ? (
-                <Button
-                  size="sm"
-                  disabled={pending}
-                  onClick={() =>
-                    setRosterSessionId(
-                      rosterSessionId === session.id ? null : session.id,
-                    )
-                  }
-                >
+              {canProgram ? (
+                <Button size="sm" disabled={pending} onClick={() => toggleRoster(session.id)}>
                   {rosterSessionId === session.id ? "Hide Roster" : "View Roster"}
                 </Button>
               ) : null}
