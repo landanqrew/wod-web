@@ -8,8 +8,10 @@ import {
   getUpcomingClassSessionsForAthlete,
 } from "../data/gym-class";
 import { getProgrammedWorkoutForSession } from "../data/programmed-workout";
-import { Equipment } from "../domain/models/equipment";
+import { Equipment, EQUIPMENT_PRESETS } from "../domain/models/equipment";
 import { MembershipRole } from "../domain/models/gym";
+import { Muscle } from "../domain/models/body";
+import { getMovementOrThrow } from "../domain/movements/library";
 import {
   ScoreType,
   WorkoutFormat,
@@ -17,7 +19,11 @@ import {
 } from "../domain/models/workout";
 import { newId } from "../ids";
 import { createClassForOwner } from "./gym-class";
-import { createGymForOwner, grantGymMembership } from "./gym";
+import {
+  createGymForOwner,
+  grantGymMembership,
+  updateGymForOwner,
+} from "./gym";
 import { upsertWorkout } from "./log";
 import {
   generateProgrammedWorkoutForGymDay,
@@ -145,14 +151,14 @@ describe("Programmed Workouts", () => {
       { ...manualWorkout, id: sourceWorkoutId, isBenchmark: true },
       ownerAthleteId,
     );
-    const programmedIds = await programGymDay(
+    const programmed = await programGymDay(
       gymId,
       coachAthleteId,
       "2027-03-01",
       manualWorkout,
       sourceWorkoutId,
     );
-    expect(programmedIds).toHaveLength(2);
+    expect(programmed.programmedWorkoutIds).toHaveLength(2);
     expect(
       await getUpcomingClassSessionsForAthlete(
         memberAthleteId,
@@ -273,5 +279,102 @@ describe("Programmed Workouts", () => {
         expect(prescription.load).toBeUndefined();
       }
     }
+
+    await updateGymForOwner(gymId, ownerAthleteId, {
+      name: "Iron Ridge",
+      recoveryWindowHours: 48,
+      floor: [...EQUIPMENT_PRESETS.fullGym]
+        .filter((equipment) => equipment !== Equipment.None)
+        .map((equipment) => ({ equipment })),
+    });
+    const recoveryClassId = await createClassForOwner(
+      gymId,
+      ownerAthleteId,
+      {
+        name: "Recovery Window Test",
+        coachAthleteId,
+        weeklyTimes: [
+          { dayOfWeek: 0, localTime: "08:00" },
+          { dayOfWeek: 1, localTime: "06:00" },
+          { dayOfWeek: 2, localTime: "06:00" },
+        ],
+        timeZone: "America/Chicago",
+        capacity: 20,
+      },
+      { startDate: "2027-03-07", endDate: "2027-03-09" },
+    );
+    await programGymDay(
+      gymId,
+      coachAthleteId,
+      "2027-03-07",
+      manualWorkout,
+    );
+    await programGymDay(gymId, coachAthleteId, "2027-03-08", {
+      ...manualWorkout,
+      id: newId("wod"),
+      name: "Metcon shoulders",
+      format: WorkoutFormat.AMRAP,
+      movements: [
+        {
+          movementId: "strict_press",
+          reps: 10,
+          rxLoad: { male: 95, female: 65 },
+        },
+      ],
+      rounds: undefined,
+      timeCap: 12,
+      scoreType: ScoreType.RoundsAndReps,
+    });
+    const warning = await programGymDay(
+      gymId,
+      coachAthleteId,
+      "2027-03-09",
+      {
+        ...manualWorkout,
+        id: newId("wod"),
+        movements: [
+          {
+            movementId: "front_squat",
+            reps: 5,
+            rxLoad: { male: 185, female: 125 },
+          },
+        ],
+      },
+    );
+    expect(warning.warningMuscles).toEqual(
+      expect.arrayContaining([Muscle.Quads, Muscle.Glutes]),
+    );
+    expect(warning.recoveringMuscles).not.toContain(Muscle.Shoulders);
+
+    const regenerated = await generateProgrammedWorkoutForGymDay(
+      gymId,
+      coachAthleteId,
+      "2027-03-09",
+      { format: WorkoutFormat.AMRAP, movementCount: 3 },
+    );
+    expect(regenerated.recoveringMuscles).toEqual(
+      expect.arrayContaining([Muscle.Quads, Muscle.Glutes]),
+    );
+    const recoverySessions = await getClassSessionsForGym(
+      gymId,
+      ownerAthleteId,
+      [recoveryClassId],
+    );
+    const generatedTarget = recoverySessions.find(
+      ({ localDate }) => localDate === "2027-03-09",
+    );
+    const generatedView = await getProgrammedWorkoutForSession(
+      generatedTarget!.id,
+      ownerAthleteId,
+    );
+    const recovering = new Set(regenerated.recoveringMuscles);
+    expect(
+      generatedView?.workout.movements.every((prescription) => {
+        const movement = getMovementOrThrow(prescription.movementId);
+        return [...movement.primaryMuscles, ...movement.secondaryMuscles].every(
+          (muscle) => !recovering.has(muscle),
+        );
+      }),
+    ).toBe(true);
   });
 });

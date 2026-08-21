@@ -16,8 +16,9 @@ export async function programGymDayAction(
   workout: unknown,
 ) {
   const athlete = await requireAthlete();
-  await programGymDay(gymId, athlete.id, localDate, workout);
+  const result = await programGymDay(gymId, athlete.id, localDate, workout);
   revalidatePath("/classes");
+  return result;
 }
 
 export async function generateGymDayAction(
@@ -27,13 +28,14 @@ export async function generateGymDayAction(
 ) {
   const athlete = await requireAthlete();
   const parsedOptions = generateOptionsSchema.parse(options);
-  await generateProgrammedWorkoutForGymDay(
+  const result = await generateProgrammedWorkoutForGymDay(
     gymId,
     athlete.id,
     localDate,
     parsedOptions as ProgramOptions,
   );
   revalidatePath("/classes");
+  return result;
 }
 
 export async function updateSessionProgrammedWorkoutAction(
@@ -41,6 +43,11 @@ export async function updateSessionProgrammedWorkoutAction(
   workout: unknown,
 ) {
   const athlete = await requireAthlete();
-  await updateProgrammedWorkoutForSession(classSessionId, athlete.id, workout);
+  const result = await updateProgrammedWorkoutForSession(
+    classSessionId,
+    athlete.id,
+    workout,
+  );
   revalidatePath("/classes");
+  return result;
 }

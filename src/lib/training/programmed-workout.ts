@@ -1,9 +1,10 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull, lt, notInArray } from "drizzle-orm";
 import { db } from "../db";
 import {
   classSessions,
   gymClasses,
   gymEquipment,
+  gyms,
   memberships,
   programmedWorkouts,
   reservations,
@@ -13,13 +14,123 @@ import { GymPermission } from "../domain/models/gym";
 import { MembershipRole } from "../domain/models/gym";
 import { Equipment } from "../domain/models/equipment";
 import type { ProgramOptions } from "../domain/programming";
-import { programWorkout } from "../domain/programming";
+import {
+  findRecoveringMuscles,
+  programWorkout,
+  recoveringMusclesLoadedBy,
+} from "../domain/programming";
+import type { Muscle } from "../domain/models/body";
 import { getMovement } from "../domain/movements/library";
 import type { Workout } from "../domain/models/workout";
 import { newId } from "../ids";
 import { programmedWorkoutSchema } from "../validation";
 import { requireGymPermission } from "../data/gym";
 import { materialiseAssignedWorkout } from "./assigned-workout";
+
+export interface ProgrammedWorkoutWriteResult {
+  programmedWorkoutIds: string[];
+  recoveringMuscles: Muscle[];
+  warningMuscles: Muscle[];
+}
+
+function sortedMuscles(muscles: ReadonlySet<Muscle>): Muscle[] {
+  return [...muscles].sort((left, right) => left.localeCompare(right));
+}
+
+async function getRecoveryMusclesForTargets(
+  gymId: string,
+  athleteId: string,
+  target: { localDate: string } | { classSessionId: string },
+  messages: { permission: string; target: string },
+): Promise<Set<Muscle>> {
+  try {
+    await requireGymPermission(gymId, athleteId, GymPermission.Program);
+  } catch (error) {
+    if (error instanceof Error && error.message === "Gym not found") {
+      throw new Error(messages.permission);
+    }
+    throw error;
+  }
+  const targetSessions = await db
+    .select({
+      id: classSessions.id,
+      startsAt: classSessions.startsAt,
+      recoveryWindowHours: gyms.recoveryWindowHours,
+    })
+    .from(classSessions)
+    .innerJoin(gymClasses, eq(gymClasses.id, classSessions.classId))
+    .innerJoin(gyms, eq(gyms.id, gymClasses.gymId))
+    .where(
+      and(
+        eq(gymClasses.gymId, gymId),
+        "localDate" in target
+          ? eq(classSessions.localDate, target.localDate)
+          : eq(classSessions.id, target.classSessionId),
+        isNull(classSessions.cancelledAt),
+      ),
+    );
+  if (targetSessions.length === 0) throw new Error(messages.target);
+
+  const windowHours = targetSessions[0].recoveryWindowHours;
+  if (windowHours === 0) return new Set();
+  const earliestHistory = new Date(
+    Math.min(...targetSessions.map(({ startsAt }) => startsAt.getTime())) -
+      windowHours * 60 * 60 * 1_000,
+  );
+  const latestTarget = new Date(
+    Math.max(...targetSessions.map(({ startsAt }) => startsAt.getTime())),
+  );
+  const history = await db
+    .select({
+      gymId: gymClasses.gymId,
+      startsAt: classSessions.startsAt,
+      workout: programmedWorkouts.workout,
+    })
+    .from(programmedWorkouts)
+    .innerJoin(
+      classSessions,
+      eq(classSessions.id, programmedWorkouts.classSessionId),
+    )
+    .innerJoin(gymClasses, eq(gymClasses.id, classSessions.classId))
+    .where(
+      and(
+        eq(gymClasses.gymId, gymId),
+        gt(classSessions.startsAt, earliestHistory),
+        lt(classSessions.startsAt, latestTarget),
+        isNull(classSessions.cancelledAt),
+        notInArray(
+          classSessions.id,
+          targetSessions.map(({ id }) => id),
+        ),
+      ),
+    );
+
+  const recovering = new Set<Muscle>();
+  for (const session of targetSessions) {
+    for (const muscle of findRecoveringMuscles(
+      history,
+      gymId,
+      session.startsAt,
+      windowHours,
+    )) {
+      recovering.add(muscle);
+    }
+  }
+  return recovering;
+}
+
+export async function getRecoveryMusclesForGymDay(
+  gymId: string,
+  athleteId: string,
+  localDate: string,
+): Promise<Set<Muscle>> {
+  return getRecoveryMusclesForTargets(
+    gymId,
+    athleteId,
+    { localDate },
+    { permission: "Gym not found", target: "No Class Sessions found" },
+  );
+}
 
 function parseProgrammedWorkout(raw: unknown): Workout {
   const parsed = programmedWorkoutSchema.parse(raw);
@@ -83,7 +194,12 @@ export async function programGymDay(
   localDate: string,
   rawWorkout: unknown,
   sourceWorkoutId: string | null = null,
-): Promise<string[]> {
+): Promise<ProgrammedWorkoutWriteResult> {
+  const recoveringMuscles = await getRecoveryMusclesForGymDay(
+    gymId,
+    athleteId,
+    localDate,
+  );
   return db.transaction(async (tx) => {
     await requireProgrammingMembership(tx, gymId, athleteId);
     const workout = parseProgrammedWorkout(rawWorkout);
@@ -139,7 +255,13 @@ export async function programGymDay(
         });
       }
     }
-    return ids;
+    return {
+      programmedWorkoutIds: ids,
+      recoveringMuscles: sortedMuscles(recoveringMuscles),
+      warningMuscles: sortedMuscles(
+        recoveringMusclesLoadedBy(workout, recoveringMuscles),
+      ),
+    };
   });
 }
 
@@ -148,8 +270,13 @@ export async function generateProgrammedWorkoutForGymDay(
   athleteId: string,
   localDate: string,
   options: ProgramOptions,
-): Promise<string[]> {
+): Promise<ProgrammedWorkoutWriteResult> {
   await requireGymPermission(gymId, athleteId, GymPermission.Program);
+  const recoveringMuscles = await getRecoveryMusclesForGymDay(
+    gymId,
+    athleteId,
+    localDate,
+  );
   const floorRows = await db
     .select()
     .from(gymEquipment)
@@ -166,7 +293,7 @@ export async function generateProgrammedWorkoutForGymDay(
             .map(({ equipment, stationCount }) => [equipment, stationCount!]),
         ),
       },
-      avoidedMuscles: new Set(),
+      avoidedMuscles: recoveringMuscles,
     },
     options,
   );
@@ -177,8 +304,24 @@ export async function updateProgrammedWorkoutForSession(
   classSessionId: string,
   athleteId: string,
   rawWorkout: unknown,
-) {
-  await db.transaction(async (tx) => {
+): Promise<ProgrammedWorkoutWriteResult> {
+  const [target] = await db
+    .select({ gymId: gymClasses.gymId, localDate: classSessions.localDate })
+    .from(classSessions)
+    .innerJoin(gymClasses, eq(gymClasses.id, classSessions.classId))
+    .where(eq(classSessions.id, classSessionId))
+    .limit(1);
+  if (!target) throw new Error("Class Session not found");
+  const recoveringMuscles = await getRecoveryMusclesForTargets(
+    target.gymId,
+    athleteId,
+    { classSessionId },
+    {
+      permission: "Class Session not found",
+      target: "Class Session not found",
+    },
+  );
+  return db.transaction(async (tx) => {
     const [candidate] = await tx
       .select({ gymId: gymClasses.gymId })
       .from(classSessions)
@@ -226,5 +369,12 @@ export async function updateProgrammedWorkoutForSession(
         programmedWorkout: workout,
       });
     }
+    return {
+      programmedWorkoutIds: [updated.id],
+      recoveringMuscles: sortedMuscles(recoveringMuscles),
+      warningMuscles: sortedMuscles(
+        recoveringMusclesLoadedBy(workout, recoveringMuscles),
+      ),
+    };
   });
 }
