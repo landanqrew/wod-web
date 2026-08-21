@@ -31,6 +31,7 @@ import { promoteLoadAdjustmentAction } from "@/lib/actions/load-adjustment";
 import { MembershipRole, type Gym, type GymMember } from "@/lib/domain/models/gym";
 import type { AssignedWorkout } from "@/lib/domain/models/assigned-workout";
 import type { ClassSessionSummary, GymClass } from "@/lib/domain/models/gym-class";
+import type { ClassSessionRoster } from "@/lib/domain/models/roster";
 import {
   ScoreType,
   WorkoutFormat,
@@ -101,6 +102,7 @@ export function ClassesClient({
   classesByGym,
   coachesByGym,
   movementOptionsBySession,
+  rostersBySession,
 }: {
   gyms: Gym[];
   upcomingSessions: ClassSessionSummary[];
@@ -112,6 +114,7 @@ export function ClassesClient({
     string,
     Array<{ id: string; name: string; loadType: string; available: boolean }>
   >;
+  rostersBySession: Record<string, ClassSessionRoster>;
 }) {
   const router = useRouter();
   const ownerGyms = gyms.filter(
@@ -127,6 +130,9 @@ export function ClassesClient({
   );
   const [promotionPrompt, setPromotionPrompt] =
     React.useState<PromotionPrompt | null>(null);
+  const [rosterSessionId, setRosterSessionId] = React.useState<string | null>(
+    null,
+  );
   const [pending, startTransition] = React.useTransition();
   const selectedGym = gyms.find(({ id }) => id === selectedGymId) ?? gyms[0];
 
@@ -991,6 +997,104 @@ export function ClassesClient({
                   ? ` · ${session.reservationCount} reserved`
                   : ""}
               </p>
+              {rosterSessionId === session.id && rostersBySession[session.id] ? (
+                <div className="space-y-3 rounded-xl border border-border bg-app p-3">
+                  <div>
+                    <p className="text-sm font-semibold">Coach Roster</p>
+                    <p className="text-xs text-subtle">
+                      Informational only · athlete changes never require approval
+                    </p>
+                  </div>
+                  {rostersBySession[session.id].scalingPatterns.length > 0 ? (
+                    <div className="rounded-lg border border-primary/30 bg-primary/5 p-2">
+                      <p className="text-xs font-semibold">Class-wide patterns</p>
+                      {rostersBySession[session.id].scalingPatterns.map((pattern) => (
+                        <p
+                          key={pattern.programmedMovementId}
+                          className="mt-1 text-xs text-subtle"
+                        >
+                          {pattern.programmedMovementName} changed for {pattern.athleteCount} athletes
+                        </p>
+                      ))}
+                    </div>
+                  ) : null}
+                  {rostersBySession[session.id].athletes.length === 0 ? (
+                    <p className="text-xs text-subtle">No athletes reserved yet.</p>
+                  ) : (
+                    rostersBySession[session.id].athletes.map((rosterAthlete) => (
+                      <div
+                        key={rosterAthlete.athleteId}
+                        className="space-y-2 rounded-lg border border-border p-2"
+                      >
+                        <p className="text-sm font-semibold">
+                          {rosterAthlete.athleteName}
+                        </p>
+                        {rosterAthlete.activeImpediments.length > 0 ? (
+                          <div className="space-y-1">
+                            {rosterAthlete.activeImpediments.map((impediment) => (
+                              <p key={impediment.id} className="text-xs text-subtle">
+                                {formatLabel(impediment.category)} · {formatLabel(impediment.severity)}
+                                {impediment.description
+                                  ? ` · ${impediment.description}`
+                                  : ""}
+                                {[...impediment.affectedMuscles, ...impediment.affectedJoints]
+                                  .length > 0
+                                  ? ` · ${[
+                                      ...impediment.affectedMuscles,
+                                      ...impediment.affectedJoints,
+                                    ]
+                                      .map(formatLabel)
+                                      .join(", ")}`
+                                  : ""}
+                              </p>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-subtle">No active Impediments.</p>
+                        )}
+                        {rosterAthlete.assignedWorkout ? (
+                          <p className="text-xs text-subtle">
+                            {rosterAthlete.assignedWorkout.workout.movements
+                              .map(prescriptionLine)
+                              .join(" · ")}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-subtle">
+                            Assigned Workout is not materialised yet.
+                          </p>
+                        )}
+                        {rosterAthlete.diffs.length > 0 ? (
+                          <div className="space-y-1">
+                            {rosterAthlete.diffs.flatMap((diff) =>
+                              diff.fields.map((field) => (
+                                <p
+                                  key={`${diff.movementIndex}-${field.field}`}
+                                  className="text-xs"
+                                >
+                                  {field.field === "movementId"
+                                    ? `${diff.programmedMovementName} → ${diff.assignedMovementName}`
+                                    : `${diff.programmedMovementName} ${formatLabel(
+                                        field.field,
+                                      )}: ${field.programmedValue ?? "—"} → ${
+                                        field.assignedValue ?? "—"
+                                      }`}
+                                  <span className="text-subtle">
+                                    {` · ${formatLabel(field.provenance)}`}
+                                  </span>
+                                </p>
+                              )),
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-subtle">
+                            Matches the programmed prescription after Rx resolution.
+                          </p>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              ) : null}
               <Button
                 size="sm"
                 variant={session.reserved ? "danger" : "primary"}
@@ -1023,6 +1127,19 @@ export function ClassesClient({
                   onClick={() => beginProgrammedWorkoutEdit(session)}
                 >
                   Edit this Session workout
+                </Button>
+              ) : null}
+              {canProgram && rostersBySession[session.id] ? (
+                <Button
+                  size="sm"
+                  disabled={pending}
+                  onClick={() =>
+                    setRosterSessionId(
+                      rosterSessionId === session.id ? null : session.id,
+                    )
+                  }
+                >
+                  {rosterSessionId === session.id ? "Hide Roster" : "View Roster"}
                 </Button>
               ) : null}
             </Card>

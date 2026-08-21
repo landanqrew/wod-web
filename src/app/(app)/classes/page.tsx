@@ -6,6 +6,7 @@ import {
 import { getGymMembers, getGymsForAthlete } from "@/lib/data/gym";
 import { getProgrammedWorkoutForSession } from "@/lib/data/programmed-workout";
 import { getAssignedWorkoutForAthlete } from "@/lib/data/assigned-workout";
+import { getClassSessionRoster } from "@/lib/data/roster";
 import { MembershipRole } from "@/lib/domain/models/gym";
 import { getAllMovements } from "@/lib/domain/movements/library";
 import { checkMovement, mergeConstraints } from "@/lib/domain/scaling/constraint-engine";
@@ -58,6 +59,17 @@ export default async function ClassesPage() {
         await getAssignedWorkoutForAthlete(session.id, athlete.id),
       ] as const),
   );
+  const rosters = await Promise.all(
+    upcomingSessions
+      .filter(({ gymId }) => {
+        const role = gyms.find((gym) => gym.id === gymId)?.membershipRole;
+        return role === MembershipRole.Owner || role === MembershipRole.Coach;
+      })
+      .map(async (session) => [
+        session.id,
+        await getClassSessionRoster(session.id, athlete.id),
+      ] as const),
+  );
   const assignedWorkoutsBySession = Object.fromEntries(assignedWorkouts);
   const movementOptionsBySession = Object.fromEntries(
     upcomingSessions.map((session) => {
@@ -108,6 +120,7 @@ export default async function ClassesPage() {
         ownerData.map(({ gymId, coaches }) => [gymId, coaches]),
       )}
       movementOptionsBySession={movementOptionsBySession}
+      rostersBySession={Object.fromEntries(rosters)}
     />
   );
 }

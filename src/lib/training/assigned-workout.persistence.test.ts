@@ -14,6 +14,7 @@ import {
 } from "../db/schema";
 import { getAssignedWorkoutForAthlete } from "../data/assigned-workout";
 import { getClassSessionsForGym } from "../data/gym-class";
+import { getClassSessionRoster } from "../data/roster";
 import { Joint } from "../domain/models/body";
 import { Equipment } from "../domain/models/equipment";
 import { MembershipRole } from "../domain/models/gym";
@@ -223,6 +224,58 @@ describe("Assigned Workout materialisation", () => {
     ]);
     expect(deferred?.changes.flatMap(({ explanations }) => explanations).join(" "))
       .toContain("Load Adjustment");
+    const ownerRoster = await getClassSessionRoster(
+      sessions[1].id,
+      ownerAthleteId,
+    );
+    expect(ownerRoster.athletes).toEqual([
+      expect.objectContaining({
+        athleteId: memberAthleteId,
+        athleteName: "Member",
+        diffs: expect.arrayContaining([
+          expect.objectContaining({
+            programmedMovementId: "back_squat",
+            assignedMovementId: "back_extension",
+          }),
+          expect.objectContaining({
+            programmedMovementId: "bench_press",
+            fields: expect.arrayContaining([
+              expect.objectContaining({
+                field: "load",
+                programmedValue: 80,
+                assignedValue: 40,
+                provenance: "adjusted",
+              }),
+            ]),
+          }),
+        ]),
+        activeImpediments: [
+          expect.objectContaining({
+            description: "Knee rehab",
+            affectedJoints: [Joint.Knees],
+          }),
+        ],
+      }),
+    ]);
+    expect(
+      ownerRoster.athletes[0].activeImpediments.map(({ description }) =>
+        description,
+      ),
+    ).not.toContain("Old shoulder issue");
+    await grantGymMembership(gymId, ownerAthleteId, {
+      email: `${memberUserId}@test.local`,
+      role: MembershipRole.Coach,
+    });
+    await expect(
+      getClassSessionRoster(sessions[1].id, memberAthleteId),
+    ).resolves.toMatchObject({ classSessionId: sessions[1].id });
+    await grantGymMembership(gymId, ownerAthleteId, {
+      email: `${memberUserId}@test.local`,
+      role: MembershipRole.Member,
+    });
+    await expect(
+      getClassSessionRoster(sessions[1].id, memberAthleteId),
+    ).rejects.toThrow("Gym not found");
     await expect(
       getAssignedWorkoutForAthlete(sessions[1].id, ownerAthleteId),
     ).rejects.toThrow("Class Session not found");
