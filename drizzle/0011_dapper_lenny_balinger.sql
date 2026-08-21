@@ -1,0 +1,2 @@
+ALTER TABLE "gyms" ADD COLUMN "recovery_window_hours" integer DEFAULT 48 NOT NULL;--> statement-breakpoint
+ALTER TABLE "gyms" ADD CONSTRAINT "gyms_recovery_window_hours_check" CHECK ("gyms"."recovery_window_hours" >= 0 AND "gyms"."recovery_window_hours" <= 720);

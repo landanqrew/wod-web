@@ -25,7 +25,12 @@ const EQUIPMENT = Object.values(Equipment).filter(
   (equipment) => equipment !== Equipment.None,
 );
 
-type Draft = { id?: string; name: string; floor: GymFloorEntry[] };
+type Draft = {
+  id?: string;
+  name: string;
+  recoveryWindowHours: number;
+  floor: GymFloorEntry[];
+};
 
 export function GymsClient({
   gyms,
@@ -47,8 +52,13 @@ export function GymsClient({
   function edit(gym?: Gym) {
     setDraft(
       gym
-        ? { id: gym.id, name: gym.name, floor: gym.floor }
-        : { name: "", floor: [] },
+        ? {
+            id: gym.id,
+            name: gym.name,
+            recoveryWindowHours: gym.recoveryWindowHours,
+            floor: gym.floor,
+          }
+        : { name: "", recoveryWindowHours: 48, floor: [] },
     );
   }
 
@@ -82,7 +92,11 @@ export function GymsClient({
     if (!draft) return;
     startTransition(async () => {
       try {
-        const input = { name: draft.name, floor: draft.floor };
+        const input = {
+          name: draft.name,
+          recoveryWindowHours: draft.recoveryWindowHours,
+          floor: draft.floor,
+        };
         if (draft.id) await updateGymAction(draft.id, input);
         else await createGymAction(input);
         toast.success(draft.id ? "Gym floor updated" : "Gym created");
@@ -143,6 +157,23 @@ export function GymsClient({
               value={draft.name}
               maxLength={120}
               onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+            />
+          </FieldRow>
+          <FieldRow
+            label="Strength recovery window (hours)"
+            hint="Used for programming guidance; 0 disables the window"
+          >
+            <Input
+              type="number"
+              min={0}
+              max={720}
+              value={draft.recoveryWindowHours}
+              onChange={(event) =>
+                setDraft({
+                  ...draft,
+                  recoveryWindowHours: Number(event.target.value),
+                })
+              }
             />
           </FieldRow>
           <div className="flex flex-wrap gap-1.5">
@@ -210,6 +241,7 @@ export function GymsClient({
                 <p className="text-xs text-subtle">
                   {titleCase(gym.membershipRole)} · {gym.floor.length} equipment
                   type{gym.floor.length === 1 ? "" : "s"}
+                  {` · ${gym.recoveryWindowHours}h strength recovery`}
                 </p>
               </div>
               <div className="flex flex-wrap gap-1.5">

@@ -36,6 +36,7 @@ export interface GymFloorEntry {
 export interface Gym {
   id: string;
   name: string;
+  recoveryWindowHours: number;
   membershipRole: MembershipRole;
   floor: GymFloorEntry[];
 }

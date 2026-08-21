@@ -58,6 +58,7 @@ export async function getGymsForAthlete(athleteId: string): Promise<Gym[]> {
   return rows.map((row) => ({
     id: row.gym.id,
     name: row.gym.name,
+    recoveryWindowHours: row.gym.recoveryWindowHours,
     membershipRole: row.role as MembershipRole,
     floor: floorRows
       .filter(({ gymId }) => gymId === row.gym.id)
@@ -90,6 +91,7 @@ export async function getGymForAthlete(
   return {
     id: row.gym.id,
     name: row.gym.name,
+    recoveryWindowHours: row.gym.recoveryWindowHours,
     membershipRole: row.role as MembershipRole,
     floor: floor.map(({ equipment, stationCount }) => ({
       equipment: equipment as Equipment,

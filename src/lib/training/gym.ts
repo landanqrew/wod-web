@@ -22,6 +22,7 @@ export async function createGymForOwner(ownerAthleteId: string, raw: unknown) {
     await tx.insert(gyms).values({
       id: gymId,
       name: input.name,
+      recoveryWindowHours: input.recoveryWindowHours,
     });
     await tx.insert(memberships).values({
       gymId,
@@ -52,7 +53,11 @@ export async function updateGymForOwner(
   await db.transaction(async (tx) => {
     const [ownedGym] = await tx
       .update(gyms)
-      .set({ name: input.name, updatedAt: new Date() })
+      .set({
+        name: input.name,
+        recoveryWindowHours: input.recoveryWindowHours,
+        updatedAt: new Date(),
+      })
       .where(
         and(
           eq(gyms.id, gymId),
