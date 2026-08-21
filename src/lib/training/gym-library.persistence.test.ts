@@ -186,7 +186,9 @@ describe("Gym workout library", () => {
       {
         id: newId("res"),
         athleteId: ownerAthleteId,
-        workoutId: sourceWorkoutId,
+        workoutId: reservationRows.find(
+          ({ classSessionId }) => classSessionId === sessions[0].id,
+        )!.assignedWorkoutId,
         assignedWorkoutId: reservationRows.find(
           ({ classSessionId }) => classSessionId === sessions[0].id,
         )!.assignedWorkoutId,
@@ -199,7 +201,9 @@ describe("Gym workout library", () => {
       {
         id: newId("res"),
         athleteId: ownerAthleteId,
-        workoutId: sourceWorkoutId,
+        workoutId: reservationRows.find(
+          ({ classSessionId }) => classSessionId === sessions[1].id,
+        )!.assignedWorkoutId,
         assignedWorkoutId: reservationRows.find(
           ({ classSessionId }) => classSessionId === sessions[1].id,
         )!.assignedWorkoutId,

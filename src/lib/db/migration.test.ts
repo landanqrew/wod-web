@@ -294,6 +294,7 @@ describe("Class result lineage migration", () => {
       for (const migrationName of [
         "0013_spicy_scourge.sql",
         "0014_nice_lady_deathstrike.sql",
+        "0015_high_next_avengers.sql",
       ]) {
         const migration = (
           await readFile(
