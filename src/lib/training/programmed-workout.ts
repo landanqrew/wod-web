@@ -9,6 +9,7 @@ import {
   notInArray,
 } from "drizzle-orm";
 import { db } from "../db";
+import { rowToWorkout } from "../db/mappers";
 import {
   classSessions,
   gymClasses,
@@ -100,7 +101,7 @@ async function findSessionStationWarningsInTransaction(
   );
 }
 
-async function lockProgrammingGymInTransaction(
+export async function lockProgrammingGymInTransaction(
   tx: Transaction,
   gymId: string,
   athleteId: string,
@@ -234,15 +235,19 @@ function parseProgrammedWorkout(raw: unknown): Workout {
 
 async function assertSourceWorkoutExists(
   tx: Transaction,
+  gymId: string,
   sourceWorkoutId: string | null,
 ) {
   if (!sourceWorkoutId) return;
   const [source] = await tx
-    .select({ id: workouts.id })
+    .select({ id: workouts.id, gymId: workouts.gymId, isBenchmark: workouts.isBenchmark })
     .from(workouts)
     .where(eq(workouts.id, sourceWorkoutId))
     .limit(1);
   if (!source) throw new Error("Source Workout not found");
+  if (source.gymId !== gymId && !(source.gymId === null && source.isBenchmark)) {
+    throw new Error("Source Workout not found");
+  }
 }
 
 async function persistGymDayInTransaction(
@@ -321,7 +326,7 @@ export async function programGymDayInTransaction(
     windowHours,
   );
   const workout = parseProgrammedWorkout(rawWorkout);
-  await assertSourceWorkoutExists(tx, sourceWorkoutId);
+  await assertSourceWorkoutExists(tx, gymId, sourceWorkoutId);
   const floorRows = await tx
     .select({
       equipment: gymEquipment.equipment,
@@ -370,6 +375,37 @@ export async function programGymDay(
       sourceWorkoutId,
     ),
   );
+}
+
+export async function programGymDayFromSource(
+  gymId: string,
+  athleteId: string,
+  localDate: string,
+  sourceWorkoutId: string,
+  rawWorkout?: unknown,
+): Promise<ProgrammedWorkoutWriteResult> {
+  return db.transaction(async (tx) => {
+    await lockProgrammingGymInTransaction(tx, gymId, athleteId, "Gym not found");
+    const [source] = await tx
+      .select()
+      .from(workouts)
+      .where(eq(workouts.id, sourceWorkoutId))
+      .limit(1);
+    if (
+      !source ||
+      (source.gymId !== gymId && !(source.gymId === null && source.isBenchmark))
+    ) {
+      throw new Error("Source Workout not found");
+    }
+    return programGymDayInTransaction(
+      tx,
+      gymId,
+      athleteId,
+      localDate,
+      rawWorkout ?? rowToWorkout(source),
+      sourceWorkoutId,
+    );
+  });
 }
 
 export async function generateProgrammedWorkoutForGymDay(

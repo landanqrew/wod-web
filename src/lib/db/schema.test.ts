@@ -16,6 +16,18 @@ describe("workout authorship", () => {
   });
 });
 
+describe("Gym workout ownership", () => {
+  it("keeps global Workouts unowned and cascades Gym-owned library rows", () => {
+    const gymForeignKey = getTableConfig(workouts).foreignKeys.find(
+      (foreignKey) =>
+        foreignKey.reference().columns.some((column) => column.name === "gym_id"),
+    );
+
+    expect(gymForeignKey?.onDelete).toBe("cascade");
+    expect(workouts.gymId.notNull).toBe(false);
+  });
+});
+
 describe("Gym Memberships", () => {
   it("models Athlete access independently from the Gym record", () => {
     const config = getTableConfig(memberships);

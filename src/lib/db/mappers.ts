@@ -100,7 +100,8 @@ export function rowToWorkout(row: WorkoutRow): Workout {
 export function workoutToRow(
   workout: Workout,
   createdBy: string | null,
-  benchmarkCategory?: string
+  benchmarkCategory?: string,
+  gymId?: string | null,
 ): typeof workouts.$inferInsert {
   return {
     id: workout.id,
@@ -118,6 +119,7 @@ export function workoutToRow(
     benchmarkCategory: benchmarkCategory ?? null,
     estimatedDuration: workout.estimatedDuration ?? null,
     createdBy,
+    gymId: gymId ?? null,
   };
 }
 

@@ -146,9 +146,14 @@ export const workouts = pgTable(
     createdBy: text("created_by").references(() => athletes.id, {
       onDelete: "set null",
     }),
+    gymId: text("gym_id").references(() => gyms.id, { onDelete: "cascade" }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
-  (t) => [index("workouts_created_by_idx").on(t.createdBy)]
+  (t) => [
+    index("workouts_created_by_idx").on(t.createdBy),
+    index("workouts_gym_idx").on(t.gymId),
+  ]
 );
 
 export const gyms = pgTable(
