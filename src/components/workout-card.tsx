@@ -14,12 +14,17 @@ export function WorkoutCard({
   headerRight,
   footer,
   note,
+  renderMovement,
   className,
 }: {
   workout: Workout;
   headerRight?: React.ReactNode;
   footer?: React.ReactNode;
   note?: React.ReactNode;
+  renderMovement?: (
+    prescription: Workout["movements"][number],
+    index: number,
+  ) => React.ReactNode;
   className?: string;
 }) {
   return (
@@ -51,6 +56,13 @@ export function WorkoutCard({
 
       <ul className="mt-3 divide-y divide-border border-y border-border">
         {workout.movements.map((p, i) => {
+          if (renderMovement) {
+            return (
+              <li key={i} className="px-5 py-3">
+                {renderMovement(p, i)}
+              </li>
+            );
+          }
           const movement = p.movement ?? getMovement(p.movementId);
           const quantity =
             p.reps !== undefined

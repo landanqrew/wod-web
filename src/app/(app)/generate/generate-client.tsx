@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Dices, Layers, RefreshCw, Save, Zap } from "lucide-react";
+import { Check, Dices, Layers, Pencil, RefreshCw, Save, Zap } from "lucide-react";
 import { Card, PageHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ChipToggle, FieldRow, Input, Label, Select } from "@/components/ui/field";
@@ -21,6 +21,11 @@ import {
 import { WorkoutFormat } from "@/lib/domain/models/workout";
 import type { TrainingSession, Workout } from "@/lib/domain/models/workout";
 import { DifficultyTier } from "@/lib/domain/models/movement";
+import { LoadType } from "@/lib/domain/models/movement";
+import type { MovementPrescription } from "@/lib/domain/models/workout";
+import { Sex } from "@/lib/domain/models/athlete";
+import { getAllMovements, getMovementOrThrow } from "@/lib/domain/movements";
+import { replaceWorkoutMovement } from "@/lib/domain/generator/edit-workout";
 import type { ScaledWorkout } from "@/lib/domain/scaling/scaling-tiers";
 import { formatLabel, TIER_LABELS } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -32,10 +37,14 @@ export function GenerateClient({
   benchmarks,
   constraintNote,
   defaultDuration,
+  athleteSex,
+  allowedMovementIds,
 }: {
   benchmarks: Workout[];
   constraintNote: string | null;
   defaultDuration: number;
+  athleteSex: Sex;
+  allowedMovementIds: string[];
 }) {
   const router = useRouter();
   const [format, setFormat] = React.useState<WorkoutFormat>(WorkoutFormat.AMRAP);
@@ -51,6 +60,13 @@ export function GenerateClient({
   const [session, setSession] = React.useState<TrainingSession | null>(null);
   const [logging, setLogging] = React.useState(false);
   const [saved, setSaved] = React.useState(false);
+  const [editing, setEditing] = React.useState(false);
+  const allowedMovements = React.useMemo(() => {
+    const allowed = new Set(allowedMovementIds);
+    return getAllMovements()
+      .filter(({ id }) => allowed.has(id))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [allowedMovementIds]);
 
   const active =
     tiers?.find((t) => t.tier === tier)?.workout ??
@@ -64,6 +80,42 @@ export function GenerateClient({
     setTier(DifficultyTier.Rx);
     setSession(null);
     setSaved(false);
+    setEditing(false);
+  }
+
+  function editActive(update: (workout: Workout) => Workout) {
+    if (!active) return;
+    const edited = update(active);
+    const needsNewIdentity = saved || active.isBenchmark;
+    setBase({
+      ...edited,
+      id: needsNewIdentity ? generatedWorkoutId() : edited.id,
+      isBenchmark: false,
+    });
+    setTiers(null);
+    setTier(DifficultyTier.Rx);
+    setSession(null);
+    setSaved(false);
+  }
+
+  function replaceMovement(index: number, movementId: string) {
+    editActive((workout) =>
+      replaceWorkoutMovement(
+        workout,
+        index,
+        getMovementOrThrow(movementId),
+        athleteSex,
+      ),
+    );
+  }
+
+  function updatePrescription(index: number, patch: Partial<MovementPrescription>) {
+    editActive((workout) => ({
+      ...workout,
+      movements: workout.movements.map((prescription, movementIndex) =>
+        movementIndex === index ? { ...prescription, ...patch } : prescription,
+      ),
+    }));
   }
 
   async function generate() {
@@ -301,8 +353,57 @@ export function GenerateClient({
                     </div>
                   ) : null
                 }
+                renderMovement={
+                  editing
+                    ? (prescription, index) => {
+                        const movement = getMovementOrThrow(prescription.movementId);
+                        const usedIds = new Set(
+                          active.movements
+                            .filter((_, movementIndex) => movementIndex !== index)
+                            .map(({ movementId }) => movementId),
+                        );
+                        return (
+                          <div className="grid items-end gap-2 sm:grid-cols-[minmax(180px,1fr)_120px_auto]">
+                            <FieldRow label="Exercise">
+                              <Select
+                                aria-label={`Exercise ${index + 1}`}
+                                value={prescription.movementId}
+                                onChange={(event) => replaceMovement(index, event.target.value)}
+                              >
+                                {!allowedMovementIds.includes(prescription.movementId) ? (
+                                  <option value={prescription.movementId}>{movement.name}</option>
+                                ) : null}
+                                {allowedMovements.map((option) => (
+                                  <option
+                                    key={option.id}
+                                    value={option.id}
+                                    disabled={usedIds.has(option.id)}
+                                  >
+                                    {option.name}
+                                  </option>
+                                ))}
+                              </Select>
+                            </FieldRow>
+                            <QuantityEditor
+                              prescription={prescription}
+                              loadType={movement.loadType}
+                              supportsLoad={
+                                movement.defaultLoadMale !== undefined ||
+                                movement.defaultLoadFemale !== undefined
+                              }
+                              onChange={(patch) => updatePrescription(index, patch)}
+                            />
+                          </div>
+                        );
+                      }
+                    : undefined
+                }
                 footer={
                   <>
+                    <Button size="sm" onClick={() => setEditing((value) => !value)}>
+                      {editing ? <Check size={14} /> : <Pencil size={14} />}
+                      {editing ? "Done editing" : "Edit movements"}
+                    </Button>
                     <Button size="sm" onClick={generate} disabled={pending}>
                       <RefreshCw size={14} /> Regenerate
                     </Button>
@@ -344,6 +445,83 @@ export function GenerateClient({
       ) : null}
     </>
   );
+}
+
+function QuantityEditor({
+  prescription,
+  loadType,
+  supportsLoad,
+  onChange,
+}: {
+  prescription: MovementPrescription;
+  loadType: LoadType;
+  supportsLoad: boolean;
+  onChange: (patch: Partial<MovementPrescription>) => void;
+}) {
+  const field = quantityField(loadType);
+  const label = quantityLabel(loadType);
+  const value = prescription[field] ?? 0;
+
+  return (
+    <>
+      <FieldRow label={label}>
+        <Input
+          aria-label={label}
+          type="number"
+          min={0}
+          step={1}
+          className="font-mono"
+          value={value}
+          onChange={(event) => onChange({ [field]: Number(event.target.value) })}
+        />
+      </FieldRow>
+      {supportsLoad || prescription.load !== undefined ? (
+        <FieldRow label="Load (lb)" className="sm:w-28">
+          <Input
+            aria-label="Load (lb)"
+            type="number"
+            min={0}
+            step={1}
+            className="font-mono"
+            value={prescription.load ?? 0}
+            onChange={(event) => onChange({ load: Number(event.target.value) })}
+          />
+        </FieldRow>
+      ) : (
+        <span />
+      )}
+    </>
+  );
+}
+
+function quantityField(loadType: LoadType): "reps" | "distance" | "duration" | "calories" {
+  switch (loadType) {
+    case LoadType.Distance:
+      return "distance";
+    case LoadType.Duration:
+      return "duration";
+    case LoadType.Calories:
+      return "calories";
+    default:
+      return "reps";
+  }
+}
+
+function quantityLabel(loadType: LoadType): string {
+  switch (loadType) {
+    case LoadType.Distance:
+      return "Distance (m)";
+    case LoadType.Duration:
+      return "Duration (sec)";
+    case LoadType.Calories:
+      return "Calories";
+    default:
+      return "Reps";
+  }
+}
+
+function generatedWorkoutId(): string {
+  return `wod_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 /** "kept" alone means nothing changed at this tier — don't warn about it. */
